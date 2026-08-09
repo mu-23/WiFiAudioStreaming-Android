@@ -3755,7 +3755,9 @@ fun ProtocolsPage(accent: Color = MaterialTheme.colorScheme.primary, swipeOffset
         features = listOf(
             FeatureItem(drawableRes = R.drawable.wfas_protocol, titleRes = R.string.onboarding_proto1_title, descRes = R.string.onboarding_proto1_desc),
             FeatureItem(imageVector = Icons.Default.Radio, titleRes = R.string.onboarding_proto2_title, descRes = R.string.onboarding_proto2_desc),
-            FeatureItem(imageVector = Icons.Default.Language, titleRes = R.string.onboarding_proto3_title, descRes = R.string.onboarding_proto3_desc)
+            FeatureItem(imageVector = Icons.Default.Language, titleRes = R.string.onboarding_proto3_title, descRes = R.string.onboarding_proto3_desc),
+            FeatureItem(imageVector = Icons.Default.Cast, titleRes = R.string.onboarding_proto4_title, descRes = R.string.onboarding_proto4_desc),
+            FeatureItem(imageVector = Icons.Default.SpeakerGroup, titleRes = R.string.onboarding_proto5_title, descRes = R.string.onboarding_proto5_desc)
         ),
         accent = accent,
         swipeOffset = swipeOffset,

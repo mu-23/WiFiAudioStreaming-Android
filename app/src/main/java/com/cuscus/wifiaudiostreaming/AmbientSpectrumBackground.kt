@@ -64,10 +64,11 @@ fun AmbientSpectrumBackground(
     enabled: Boolean = true,
     style: String = "BARS",
     groove: Int = 0,
-    isOutlined: Boolean = LocalOutlinedSkin.current,
+    isOutlined: Boolean? = null,
     modifier: Modifier = Modifier
 ) {
     if (!enabled || !isStreaming) return
+    val effectiveOutlined = isOutlined ?: LocalOutlinedSkin.current
 
     val numBars  = AmbientSpectrumAnalyzer.NUM_BARS
     val bars     = remember { FloatArray(numBars) }
@@ -109,6 +110,7 @@ fun AmbientSpectrumBackground(
     val primary            = MaterialTheme.colorScheme.primary
     val secondary          = MaterialTheme.colorScheme.secondary
     val tertiary           = MaterialTheme.colorScheme.tertiary
+    val error              = MaterialTheme.colorScheme.error
     val primaryContainer   = MaterialTheme.colorScheme.primaryContainer
     val tertiaryContainer  = MaterialTheme.colorScheme.tertiaryContainer
     val secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
@@ -129,16 +131,18 @@ fun AmbientSpectrumBackground(
                 primaryContainer   = primaryContainer,
                 tertiaryContainer  = tertiaryContainer,
                 secondaryContainer = secondaryContainer,
-                isOutlined         = isOutlined
+                isOutlined         = effectiveOutlined
             )
         } else {
             drawCrispDesktopSpectrum(
-                bars       = bars,
-                peaks      = peaks,
-                numBars    = numBars,
-                primary    = primary,
-                tertiary   = tertiary,
-                isOutlined = isOutlined
+                bars              = bars,
+                peaks             = peaks,
+                numBars           = numBars,
+                primary           = primary,
+                secondary         = secondary,
+                tertiary          = tertiary,
+                tertiaryContainer = tertiaryContainer,
+                isOutlined        = effectiveOutlined
             )
         }
     }
@@ -151,7 +155,9 @@ private fun DrawScope.drawCrispDesktopSpectrum(
     peaks: FloatArray,
     numBars: Int,
     primary: Color,
+    secondary: Color,
     tertiary: Color,
+    tertiaryContainer: Color,
     isOutlined: Boolean
 ) {
     val gap = 4f
@@ -170,8 +176,19 @@ private fun DrawScope.drawCrispDesktopSpectrum(
             if (v <= 0.001f) continue
             val h = vizHeight * v
             val x = b * slot + gap / 2f
-            val blend = (v * 0.85f).coerceIn(0f, 1f)
-            val barColor = lerp(primary, tertiary, blend).copy(alpha = if (isOutlined) 0.95f else 0.75f).toArgb()
+
+            // Dynamic Material 3 height-based color shift (Inverted sequence):
+            // Low height  (0.0 - 0.35) -> TertiaryContainer to Tertiary
+            // Mid height  (0.35 - 0.70) -> Tertiary to Secondary
+            // Peak height (0.70 - 1.00) -> Secondary to Primary
+            val t = v.coerceIn(0f, 1f)
+            val baseColor = when {
+                t < 0.35f -> lerp(tertiaryContainer, tertiary, t / 0.35f)
+                t < 0.70f -> lerp(tertiary, secondary, (t - 0.35f) / 0.35f)
+                else      -> lerp(secondary, primary, ((t - 0.70f) / 0.30f).coerceIn(0f, 1f))
+            }
+            val alpha = (0.75f + 0.20f * t).coerceIn(0.75f, 0.95f)
+            val barColor = baseColor.copy(alpha = if (isOutlined) 0.95f else alpha).toArgb()
 
             val barPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
@@ -199,9 +216,16 @@ private fun DrawScope.drawCrispDesktopSpectrum(
             val y = size.height - vizHeight * p
             val x = b * slot + gap / 2f
 
+            val pNorm = p.coerceIn(0f, 1f)
+            val peakColor = when {
+                pNorm < 0.35f -> lerp(tertiaryContainer, tertiary, pNorm / 0.35f)
+                pNorm < 0.70f -> lerp(tertiary, secondary, (pNorm - 0.35f) / 0.35f)
+                else          -> lerp(secondary, primary, ((pNorm - 0.70f) / 0.30f).coerceIn(0f, 1f))
+            }
+
             val peakPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                color = primary.copy(alpha = 0.95f).toArgb()
+                color = peakColor.copy(alpha = 0.95f).toArgb()
                 maskFilter = BlurMaskFilter(if (isOutlined) 2.5f else 4f, BlurMaskFilter.Blur.NORMAL)
                 if (isOutlined) {
                     style = android.graphics.Paint.Style.STROKE

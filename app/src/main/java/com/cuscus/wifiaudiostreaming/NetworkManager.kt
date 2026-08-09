@@ -468,6 +468,105 @@ object NetworkManager {
     )
     private var lastBroadcastParams: BroadcastParams? = null
 
+    private fun isTransientNetworkError(e: Throwable): Boolean {
+        var cause: Throwable? = e
+        var depth = 0
+        while (cause != null && depth < 5) {
+            when (cause) {
+                is java.net.PortUnreachableException -> return true
+                is java.net.NoRouteToHostException -> return true
+                is java.net.SocketException -> {
+                    val m = cause.message?.lowercase().orEmpty()
+                    if (m.contains("enetunreach") || m.contains("network is unreachable") ||
+                        m.contains("enonet") || m.contains("ehostunreach") ||
+                        m.contains("no route to host") || m.contains("enetdown") ||
+                        m.contains("network is down") || m.contains("eaddrnotavail") ||
+                        m.contains("cannot assign requested address")
+                    ) return true
+                }
+            }
+            cause = cause.cause
+            depth++
+        }
+        return false
+    }
+
+    private const val PLC_XFADE_FRAMES = 96
+
+    private fun bestContinuationFrame(ref: ShortArray, channels: Int, refFrames: Int): Int {
+        if (refFrames < 4) return 0
+        val lastBase = (refFrames - 1) * channels
+        val prevBase = (refFrames - 2) * channels
+        var best = Long.MAX_VALUE
+        var bestFrame = 0
+        for (f in 1 until refFrames - 2) {
+            var cost = 0L
+            for (c in 0 until channels) {
+                val v = ref[f * channels + c].toLong() - ref[lastBase + c].toLong()
+                val s = (ref[(f + 1) * channels + c] - ref[f * channels + c]).toLong() -
+                        (ref[lastBase + c] - ref[prevBase + c]).toLong()
+                cost += v * v + 4L * s * s
+            }
+            if (cost < best) { best = cost; bestFrame = f }
+        }
+        return bestFrame
+    }
+
+    private fun rampedConceal(ref: ByteArray, wantedBytes: Int, frameSize: Int): ByteArray? {
+        if (frameSize <= 0) return null
+        val total = wantedBytes - (wantedBytes % frameSize)
+        val refUsable = ref.size - (ref.size % frameSize)
+        if (total < frameSize || refUsable < frameSize * 4) return null
+
+        val channels = (frameSize / 2).coerceAtLeast(1)
+        val totalFrames = total / frameSize
+        val refFrames = refUsable / frameSize
+
+        val src = ShortArray(refUsable / 2)
+        ByteBuffer.wrap(ref, 0, refUsable).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(src)
+
+        val offset = bestContinuationFrame(src, channels, refFrames)
+        val period = (2 * (refFrames - 1)).coerceAtLeast(1)
+        val outFrames = totalFrames + PLC_XFADE_FRAMES
+        val out = ByteArray(outFrames * frameSize)
+        val dst = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+
+        for (i in 0 until outFrames) {
+            val p = (offset + i) % period
+            val idx = if (p < refFrames) p else period - p
+            val gain = if (i < totalFrames) 1f
+                       else (1f - (i - totalFrames + 1).toFloat() / PLC_XFADE_FRAMES).coerceAtLeast(0f)
+            val srcBase = idx * channels
+            val dstBase = i * channels
+            for (c in 0 until channels) {
+                val s = (src[srcBase + c] * gain).toInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                dst.put(dstBase + c, s.toShort())
+            }
+        }
+        return out
+    }
+
+    private fun crossfadeIntoReal(real: ByteArray, off: Int, len: Int, tail: ByteArray, frameSize: Int): ByteArray {
+        val out = real.copyOfRange(off, off + len)
+        val channels = (frameSize / 2).coerceAtLeast(1)
+        val n = minOf(tail.size / frameSize, len / frameSize)
+        if (n <= 0) return out
+        val tb = ByteBuffer.wrap(tail).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        val ob = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        for (i in 0 until n) {
+            val t = (i + 1).toFloat() / (n + 1)
+            for (c in 0 until channels) {
+                val a = tb.get(i * channels + c).toFloat()
+                val b = ob.get(i * channels + c).toFloat()
+                val m = (a * (1f - t) + b * t).toInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                ob.put(i * channels + c, m.toShort())
+            }
+        }
+        return out
+    }
+
     private fun restartBroadcastOnNetworkChange() {
         val p = lastBroadcastParams ?: return
         if (broadcastingJob?.isActive != true) return
@@ -1368,7 +1467,8 @@ object NetworkManager {
                     clientAlive: java.util.concurrent.atomic.AtomicBoolean? = null,
                     sendDir: WfasCrypto.Dir? = null,
                     beacon: ByteArray? = null,
-                    mcast: McastSession? = null
+                    mcast: McastSession? = null,
+                    rebind: (suspend () -> SocketAddress?)? = null
                 ) {
                     val fSz = channels * 2
                     val safeMtuSize = 1400
@@ -1385,16 +1485,36 @@ object NetworkManager {
                     var loopCount = 0L
                     var sentPackets = 0L
                     var lastBeacon = 0L
+                    var linkDown = false
+                    var target = targetAddress
+                    var netRev = networkRevision.value
+                    var failedSends = 0
 
-                    Log.d(TAG, "[UDP_SENDER] streamingLoop avviato verso $targetAddress maxBytesPerPacket=$maxBytesPerPacket")
+                    Log.d(TAG, "[UDP_SENDER] streamingLoop avviato verso $target maxBytesPerPacket=$maxBytesPerPacket")
+
+                    suspend fun tryRebind(reason: String): Boolean {
+                        val fn = rebind ?: return false
+                        val nt = runCatching { fn() }.getOrNull() ?: return false
+                        target = nt
+                        failedSends = 0
+                        Log.i(TAG, "[UDP_SENDER] socket ricreato ($reason), nuovo target=$target")
+                        return true
+                    }
 
                     while (isActive && clientAlive?.get() != false) {
+                        if (rebind != null && networkRevision.value != netRev) {
+                            netRev = networkRevision.value
+                            if (tryRebind("cambio di rete") && linkDown) {
+                                linkDown = false
+                                connectionStatus.value = context.getString(R.string.status_link_restored)
+                            }
+                        }
                         val beaconNow = mcast?.beacon ?: beacon
                         val beaconUrgent = mcast?.beaconUrgent == true
                         if (beaconNow != null &&
                             (beaconUrgent || System.currentTimeMillis() - lastBeacon >= 400L)
                         ) {
-                            runCatching { sendSocket?.send(Datagram(buildPacket { writeFully(beaconNow) }, targetAddress)) }
+                            runCatching { sendSocket?.send(Datagram(buildPacket { writeFully(beaconNow) }, target)) }
                             lastBeacon = System.currentTimeMillis()
                             if (beaconUrgent) mcast?.beaconUrgent = false
                         }
@@ -1423,10 +1543,10 @@ object NetworkManager {
                                         writeFully(pcmData, offset, chunkSize)
                                     }
                                 }
-                                sendSocket?.send(Datagram(packet, targetAddress))
+                                sendSocket?.send(Datagram(packet, target))
                                 sentPackets++
                                 if (sentPackets == 1L || sentPackets % 500L == 0L) {
-                                    Log.d(TAG, "[UDP_SENDER] pkt #$sentPackets seq=$seqNumber chunkSize=$chunkSize verso $targetAddress")
+                                    Log.d(TAG, "[UDP_SENDER] pkt #$sentPackets seq=$seqNumber chunkSize=$chunkSize verso $target")
                                 }
                                 seqNumber = (seqNumber + 1) and 0xFFFF
                                 samplePosition += (chunkSize / 2 / channels).toLong()
@@ -1435,9 +1555,27 @@ object NetworkManager {
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e(TAG, "[UDP_SENDER] eccezione inviando a $targetAddress: ${e.message}")
+                            if (isTransientNetworkError(e)) {
+                                if (!linkDown) {
+                                    linkDown = true
+                                    Log.w(TAG, "[UDP_SENDER] rete non raggiungibile ($target): " +
+                                            "${e.message}. Tengo aperto lo stream e aspetto che torni.")
+                                    connectionStatus.value = context.getString(R.string.status_link_lost_waiting)
+                                }
+                                failedSends++
+                                if (failedSends >= 6) tryRebind("socket non più valido")
+                                delay(500)
+                                continue
+                            }
+                            Log.e(TAG, "[UDP_SENDER] eccezione inviando a $target: ${e.message}")
                             clientAlive?.set(false)
                             break
+                        }
+                        failedSends = 0
+                        if (linkDown) {
+                            linkDown = false
+                            Log.i(TAG, "[UDP_SENDER] rete tornata, stream ripreso verso $target")
+                            connectionStatus.value = context.getString(R.string.status_link_restored)
                         }
                     }
                     Log.d(TAG, "[UDP_SENDER] streamingLoop terminato: sentPackets=$sentPackets loopCount=$loopCount clientAlive=${clientAlive?.get()}")
@@ -1508,25 +1646,29 @@ object NetworkManager {
                 }
 
                 if (isMulticast) {
-                    val sendIface = MulticastNet.chooseSendInterface(wifiIface) { WfasPolicy.enabledOn(it) }
-                    val audioGroup = MulticastNet.audioGroup(sendIface)
-                    val groupIsV6 = audioGroup is java.net.Inet6Address
-                    val groupHost = audioGroup.hostAddress?.substringBefore('%')
-                        ?: NetworkSettings.MULTICAST_GROUP_IP
-                    val scopedGroupHost =
-                        if (groupIsV6 && sendIface != null) "$groupHost%${sendIface.name}" else groupHost
-                    val targetAddress = InetSocketAddress(scopedGroupHost, streamingPort)
-                    Log.d(TAG, "[SERVER][MULTICAST] modalità multicast, target=$targetAddress iface=${sendIface?.name} vpnActive=$vpnActive usbActive=$usbActive wifiNet=$wifiNet")
-                    applyProcessNetwork()
-                    val wifiLocalIp = sendIface?.inetAddresses?.toList()
-                        ?.filter { !it.isLoopbackAddress }
-                        ?.firstOrNull {
-                            if (groupIsV6) it is java.net.Inet6Address else it is java.net.Inet4Address
+                    fun bindMulticastSocket(): InetSocketAddress {
+                        val iface = MulticastNet.chooseSendInterface(getWifiNetworkInterface(networkInterfaceName)) {
+                            WfasPolicy.enabledOn(it)
                         }
-                        ?.hostAddress?.substringBefore('%')
-                        ?: if (groupIsV6) "::" else "0.0.0.0"
-                    Log.d(TAG, "[SERVER][MULTICAST] bindando socket su $wifiLocalIp:0 (groupV6=$groupIsV6)")
-                    sendSocket = aSocket(selectorManager).udp().bind(InetSocketAddress(wifiLocalIp, 0))
+                        val group = MulticastNet.audioGroup(iface)
+                        val v6 = group is java.net.Inet6Address
+                        val host = group.hostAddress?.substringBefore('%')
+                            ?: NetworkSettings.MULTICAST_GROUP_IP
+                        val scoped = if (v6 && iface != null) "$host%${iface.name}" else host
+                        val local = iface?.inetAddresses?.toList()
+                            ?.filter { !it.isLoopbackAddress }
+                            ?.firstOrNull { if (v6) it is java.net.Inet6Address else it is java.net.Inet4Address }
+                            ?.hostAddress?.substringBefore('%')
+                            ?: if (v6) "::" else "0.0.0.0"
+                        applyProcessNetwork()
+                        runCatching { sendSocket?.close() }
+                        Log.d(TAG, "[SERVER][MULTICAST] bindando socket su $local:0 (groupV6=$v6) iface=${iface?.name}")
+                        sendSocket = aSocket(selectorManager).udp().bind(InetSocketAddress(local, 0))
+                        return InetSocketAddress(scoped, streamingPort)
+                    }
+
+                    val targetAddress = bindMulticastSocket()
+                    Log.d(TAG, "[SERVER][MULTICAST] modalità multicast, target=$targetAddress vpnActive=$vpnActive usbActive=$usbActive wifiNet=$wifiNet")
                     Log.d(TAG, "[SERVER][MULTICAST] socket bound, setupAudioRecorders...")
                     delay(500)
                     setupAudioRecorders(safeBufferSize)
@@ -1584,7 +1726,11 @@ object NetworkManager {
                     mcastRekey = { newKey -> applyGroupKey(newKey) }
 
                     try {
-                        streamingLoop(targetAddress, mcast = session)
+                        streamingLoop(
+                            targetAddress,
+                            mcast = session,
+                            rebind = { runCatching { bindMulticastSocket() }.getOrNull() }
+                        )
                     } finally {
                         mcastRekey = null
                         mcastSession.value = null
@@ -2149,6 +2295,8 @@ object NetworkManager {
 
                         var expectedSeq = -1
                         var lastGoodPcm: ByteArray? = null
+                        var concealTail: ByteArray? = null
+                        var inSilenceRun = false
                         var versionChecked = false
 
                         val watchdogJob = launch {
@@ -2214,21 +2362,14 @@ object NetworkManager {
                                 val gap = (seq - expectedSeq) and 0xFFFF
                                 if (gap in 1..8 && !playout.shouldDrop(lastGoodPcm?.size ?: 0)) {
                                     val ref = lastGoodPcm
-                                    if (ref != null) {
-                                        var step = 0
-                                        repeat(gap.coerceAtMost(3)) {
-                                            val factor = 1.0f - step * 0.35f
-                                            step++
-                                            val fade = ByteArray(ref.size)
-                                            val bb  = ByteBuffer.wrap(ref).order(ByteOrder.LITTLE_ENDIAN)
-                                            val out = ByteBuffer.wrap(fade).order(ByteOrder.LITTLE_ENDIAN)
-                                            while (bb.remaining() >= 2) {
-                                                val s = (bb.short * factor).toInt()
-                                                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                                                out.putShort(s.toShort())
-                                            }
-                                            audioTrack.write(fade, 0, fade.size, AudioTrack.WRITE_BLOCKING)
-                                            playout.noteWritten(fade.size)
+                                    if (ref != null && frameSize > 0) {
+                                        val wanted = gap.coerceAtMost(3) * ref.size
+                                        val filled = rampedConceal(ref, wanted, frameSize)
+                                        if (filled != null) {
+                                            val body = wanted - (wanted % frameSize)
+                                            audioTrack.write(filled, 0, body, AudioTrack.WRITE_BLOCKING)
+                                            playout.noteWritten(body)
+                                            concealTail = filled.copyOfRange(body, filled.size)
                                         }
                                     }
                                 }
@@ -2247,11 +2388,24 @@ object NetworkManager {
                                 if (playout.shouldDrop(silenceLen)) {
                                     pendingSmooth = true
                                 } else {
-                                    val silenceBuffer = ByteArray(silenceLen)
-                                    audioTrack.write(silenceBuffer, 0, silenceLen, AudioTrack.WRITE_BLOCKING)
-                                    playout.noteWritten(silenceLen)
+                                    val ref = lastGoodPcm
+                                    val fadeOut = if (!inSilenceRun && ref != null && frameSize > 0)
+                                        rampedConceal(ref, silenceLen, frameSize) else null
+                                    if (fadeOut != null) {
+                                        val body = silenceLen - (silenceLen % frameSize)
+                                        audioTrack.write(fadeOut, 0, body, AudioTrack.WRITE_BLOCKING)
+                                        playout.noteWritten(body)
+                                        concealTail = fadeOut.copyOfRange(body, fadeOut.size)
+                                    } else {
+                                        concealTail = null
+                                        val silenceBuffer = ByteArray(silenceLen)
+                                        audioTrack.write(silenceBuffer, 0, silenceLen, AudioTrack.WRITE_BLOCKING)
+                                        playout.noteWritten(silenceLen)
+                                    }
                                 }
+                                inSilenceRun = true
                             } else {
+                                inSilenceRun = false
                                 silenceRunMs = 0
                                 silenceRunLogged = false
                                 val pcmLen = data.size - HEADER_SIZE
@@ -2260,6 +2414,22 @@ object NetworkManager {
                                 }
                                 if (playout.shouldDrop(pcmLen)) {
                                     pendingSmooth = true
+                                    if (lastGoodPcm == null || lastGoodPcm!!.size != pcmLen) {
+                                        lastGoodPcm = ByteArray(pcmLen)
+                                    }
+                                    data.copyInto(lastGoodPcm!!, 0, HEADER_SIZE, HEADER_SIZE + pcmLen)
+                                    return
+                                }
+                                val plcTail = concealTail
+                                concealTail = null
+                                if (plcTail != null && frameSize > 0 && pcmLen >= frameSize) {
+                                    pendingSmooth = false
+                                    val merged = crossfadeIntoReal(data, HEADER_SIZE, pcmLen, plcTail, frameSize)
+                                    denoiseInPlace(merged, 0, pcmLen)
+                                    audioTrack.write(merged, 0, pcmLen, AudioTrack.WRITE_BLOCKING)
+                                    playout.noteWritten(pcmLen)
+                                    com.cuscus.wifiaudiostreaming.dsp.AmbientSpectrumAnalyzer
+                                        .feedFrame(merged, 0, pcmLen, frameSize / 2, sampleRate)
                                     if (lastGoodPcm == null || lastGoodPcm!!.size != pcmLen) {
                                         lastGoodPcm = ByteArray(pcmLen)
                                     }
@@ -2441,6 +2611,11 @@ object NetworkManager {
                         var mcVersionChecked = false
                         var mcDir: WfasCrypto.Dir? = null
                         var mcWin = WfasCrypto.ReplayWindow()
+                        var mcExpectedSeq = -1
+                        var mcLastGoodPcm: ByteArray? = null
+                        var mcConcealTail: ByteArray? = null
+                        var mcInSilence = false
+                        val mcFrameSize = if (channelConfig == "STEREO") 4 else 2
                         var mcKey = clientPresharedKey
                         var mcKeyAsked = false
                         val mcExpectedEpoch = expectedMcastEpoch
@@ -2562,10 +2737,57 @@ object NetworkManager {
                                 audioPackets.add(src.copyOf(plen))
                             }
 
+                            fun mcConcealBeforeSeq(seq: Int) {
+                                if (mcExpectedSeq >= 0) {
+                                    val gap = (seq - mcExpectedSeq) and 0xFFFF
+                                    val ref = mcLastGoodPcm
+                                    if (gap in 1..8 && ref != null) {
+                                        val wanted = gap.coerceAtMost(3) * ref.size
+                                        val filled = rampedConceal(ref, wanted, mcFrameSize)
+                                        if (filled != null && !mcPlayout.shouldDrop(wanted)) {
+                                            val body = wanted - (wanted % mcFrameSize)
+                                            audioTrack.write(filled, 0, body, AudioTrack.WRITE_BLOCKING)
+                                            mcPlayout.noteWritten(body)
+                                            mcConcealTail = filled.copyOfRange(body, filled.size)
+                                        }
+                                    }
+                                }
+                                mcExpectedSeq = (seq + 1) and 0xFFFF
+                            }
+
+                            fun mcRemember(src: ByteArray, off: Int, lenBytes: Int) {
+                                if (lenBytes <= 0) return
+                                var keep = mcLastGoodPcm
+                                if (keep == null || keep.size != lenBytes) {
+                                    keep = ByteArray(lenBytes)
+                                    mcLastGoodPcm = keep
+                                }
+                                System.arraycopy(src, off, keep, 0, lenBytes)
+                                mcInSilence = false
+                            }
+
+                            fun mcFadeOutOnce() {
+                                if (mcInSilence) return
+                                mcInSilence = true
+                                val ref = mcLastGoodPcm ?: return
+                                val faded = rampedConceal(ref, ref.size, mcFrameSize) ?: return
+                                if (mcPlayout.shouldDrop(ref.size)) return
+                                val body = ref.size - (ref.size % mcFrameSize)
+                                audioTrack.write(faded, 0, body, AudioTrack.WRITE_BLOCKING)
+                                mcPlayout.noteWritten(body)
+                                mcConcealTail = faded.copyOfRange(body, faded.size)
+                            }
+
                             suspend fun playMc(audio: ByteArray) {
                                 val len = audio.size
                                 if (len >= MC_HEADER_SIZE && audio[0] == MC_MAGIC_0 && audio[1] == MC_MAGIC_1) {
-                                    if (len == MC_HEADER_SIZE) return
+                                    val mcSeq = ((audio[4].toInt() and 0xFF) shl 8) or (audio[5].toInt() and 0xFF)
+                                    if (len == MC_HEADER_SIZE) {
+                                        mcConcealBeforeSeq(mcSeq)
+                                        mcFadeOutOnce()
+                                        return
+                                    }
+                                    mcConcealBeforeSeq(mcSeq)
                                     LinkMetrics.onPacket(
                                         ((audio[4].toInt() and 0xFF) shl 8) or (audio[5].toInt() and 0xFF),
                                         ((audio[6].toLong() and 0xFF) shl 24) or
@@ -2589,9 +2811,14 @@ object NetworkManager {
                                             val r = WfasCrypto.decryptPacket(dir, mcWin, audio, len)
                                             if (r is WfasCrypto.Decrypted.Ok && r.pcm.isNotEmpty()) {
                                                 if (mcPlayout.shouldDrop(r.pcm.size)) return
-                                                denoiseInPlace(r.pcm, 0, r.pcm.size)
-                                                audioTrack.write(r.pcm, 0, r.pcm.size, AudioTrack.WRITE_BLOCKING)
-                                                mcPlayout.noteWritten(r.pcm.size)
+                                                val t = mcConcealTail
+                                                mcConcealTail = null
+                                                val outPcm = if (t != null && r.pcm.size >= mcFrameSize)
+                                                    crossfadeIntoReal(r.pcm, 0, r.pcm.size, t, mcFrameSize) else r.pcm
+                                                denoiseInPlace(outPcm, 0, outPcm.size)
+                                                audioTrack.write(outPcm, 0, outPcm.size, AudioTrack.WRITE_BLOCKING)
+                                                mcPlayout.noteWritten(outPcm.size)
+                                                mcRemember(r.pcm, 0, r.pcm.size)
                                                 // Feed ambient spectrum visualizer (multicast encrypted)
                                                 com.cuscus.wifiaudiostreaming.dsp.AmbientSpectrumAnalyzer
                                                     .feedFrame(r.pcm, 0, r.pcm.size, if (channelConfig == "STEREO") 2 else 1, sampleRate)
@@ -2601,12 +2828,18 @@ object NetworkManager {
                                         val pcmLen = len - MC_HEADER_SIZE
                                         if (pcmLen > 0) {
                                             if (mcPlayout.shouldDrop(pcmLen)) return
-                                            denoiseInPlace(audio, MC_HEADER_SIZE, pcmLen)
-                                            audioTrack.write(audio, MC_HEADER_SIZE, pcmLen, AudioTrack.WRITE_BLOCKING)
+                                            mcRemember(audio, MC_HEADER_SIZE, pcmLen)
+                                            val t = mcConcealTail
+                                            mcConcealTail = null
+                                            val outPcm = if (t != null && pcmLen >= mcFrameSize)
+                                                crossfadeIntoReal(audio, MC_HEADER_SIZE, pcmLen, t, mcFrameSize)
+                                            else audio.copyOfRange(MC_HEADER_SIZE, MC_HEADER_SIZE + pcmLen)
+                                            denoiseInPlace(outPcm, 0, pcmLen)
+                                            audioTrack.write(outPcm, 0, pcmLen, AudioTrack.WRITE_BLOCKING)
                                             mcPlayout.noteWritten(pcmLen)
                                             // Feed ambient spectrum visualizer (multicast plain header)
                                             com.cuscus.wifiaudiostreaming.dsp.AmbientSpectrumAnalyzer
-                                                .feedFrame(audio, MC_HEADER_SIZE, pcmLen, if (channelConfig == "STEREO") 2 else 1, sampleRate)
+                                                .feedFrame(outPcm, 0, pcmLen, if (channelConfig == "STEREO") 2 else 1, sampleRate)
                                         }
                                     }
                                 } else {

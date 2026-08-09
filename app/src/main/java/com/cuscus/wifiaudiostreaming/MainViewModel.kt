@@ -30,6 +30,7 @@ import com.cuscus.wifiaudiostreaming.data.AutoConnectEntry
 import com.cuscus.wifiaudiostreaming.data.SettingsDataStore
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsDataStore = SettingsDataStore(application)
@@ -487,6 +488,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     @SuppressLint("MissingPermission")
+    private suspend fun resolveFromDiscovery(targetIp: String, timeoutMs: Long): ServerInfo? {
+        fun match(map: Map<String, ServerInfo>) =
+            map.values.firstOrNull { NetAddr.normalize(it.ip) == targetIp }
+
+        match(discoveredDevices.value)?.let { return it }
+
+        val app = getApplication<Application>()
+        val alreadyListening = NetworkManager.isListeningActive()
+        if (!alreadyListening) {
+            NetworkManager.startListeningForDevices(app, appSettings.value?.networkInterface ?: "Auto")
+        }
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                discoveredDevices.map { match(it) }.filterNotNull().first()
+            }
+        } finally {
+            if (!alreadyListening) NetworkManager.stopListeningForDevices()
+        }
+    }
+
     fun applyPairing(payload: PairingPayload) {
         if (isPayloadExpired(payload)) {
             _pairingError.value = PairingError.EXPIRED
@@ -501,11 +522,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isServer.value = false
             _isMulticastMode.value = payload.isMulticast
 
-            val serverInfo = ServerInfo(
-                ip = NetAddr.normalize(payload.ip),
-                isMulticast = payload.isMulticast,
-                port = payload.port
-            )
+            val target = NetAddr.normalize(payload.ip)
+            val known = resolveFromDiscovery(target, 2500)
+            val serverInfo = known?.copy(port = payload.port, isMulticast = payload.isMulticast)
+                ?: ServerInfo(
+                    ip = target,
+                    isMulticast = payload.isMulticast,
+                    port = payload.port
+                )
             startClient(serverInfo, presharedKey = payload.keyBase64)
         }
     }
@@ -676,15 +700,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             updateStatus("Detecting mode for ${NetAddr.display(ip)}...")
             val port = currentSettings.streamingPort
 
-            val knownServer = discoveredDevices.value.values.find { it.ip == ip }
+            val knownServer = resolveFromDiscovery(ip, 2500)
 
             val isMulti = knownServer?.isMulticast ?: NetworkManager.probeIsMulticast(ip, port)
 
-            val manualServerInfo = ServerInfo(
-                ip = ip,
-                isMulticast = isMulti,
-                port = port
-            )
+            val manualServerInfo = knownServer?.copy(port = port, isMulticast = isMulti)
+                ?: ServerInfo(ip = ip, isMulticast = isMulti, port = port)
             startClient(manualServerInfo)
         }
     }

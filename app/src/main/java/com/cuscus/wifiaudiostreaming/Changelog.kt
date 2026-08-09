@@ -27,12 +27,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Https
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Router
+import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.Button
@@ -103,6 +108,76 @@ data class ChangelogEntry(
 object Changelog {
 
     val entries: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "1.2.0",
+            date = Bilingual("August 2026", "Agosto 2026"),
+            headline = Bilingual(
+                "Two new protocols — DLNA and Snapcast — pairing by QR code, and streaming over USB.",
+                "Due nuovi protocolli — DLNA e Snapcast — accoppiamento con QR code e streaming via USB."
+            ),
+            items = listOf(
+                ChangelogItem(
+                    icon = Icons.Filled.Cast,
+                    title = Bilingual("Play on your DLNA devices", "Riproduci sui tuoi dispositivi DLNA"),
+                    body = Bilingual(
+                        "Send the audio straight to the Smart TVs, AV receivers and network speakers you already own. They need nothing installed: pick a renderer and it starts playing.",
+                        "Manda l'audio direttamente alle Smart TV, ai sintoamplificatori e ai diffusori di rete che possiedi già. Su di loro non serve installare nulla: scegli un renderer e parte."
+                    )
+                ),
+                ChangelogItem(
+                    icon = Icons.Filled.SpeakerGroup,
+                    title = Bilingual("Snapcast multiroom", "Multiroom con Snapcast"),
+                    body = Bilingual(
+                        "Every snapclient on the network — Raspberry Pi, ESP32, Home Assistant, the Snapcast apps — joins in and plays in sync, room after room.",
+                        "Ogni snapclient sulla rete — Raspberry Pi, ESP32, Home Assistant, le app Snapcast — si unisce e riproduce in sincrono, stanza dopo stanza."
+                    )
+                ),
+                ChangelogItem(
+                    icon = Icons.Filled.QrCode2,
+                    title = Bilingual("Pair with a QR code", "Accoppiamento con QR code"),
+                    body = Bilingual(
+                        "Point the camera at the code shown by the desktop app: address, port and key arrive together. Nothing to type, and the connection is encrypted from the first packet.",
+                        "Inquadra il codice mostrato dall'app desktop: indirizzo, porta e chiave arrivano insieme. Niente da digitare, e la connessione è cifrata dal primo pacchetto."
+                    )
+                ),
+                ChangelogItem(
+                    icon = Icons.Filled.Usb,
+                    title = Bilingual("Stream over USB", "Streaming via USB"),
+                    body = Bilingual(
+                        "Plug the phone in and the audio takes the cable instead of the air: lower latency, no Wi-Fi congestion, and it keeps working where the network does not.",
+                        "Collega il telefono e l'audio prende il cavo invece dell'aria: meno latenza, nessuna congestione Wi-Fi e continua a funzionare dove la rete non arriva."
+                    )
+                ),
+                ChangelogItem(
+                    icon = Icons.Filled.Router,
+                    title = Bilingual("IPv6 and mixed networks", "IPv6 e reti miste"),
+                    body = Bilingual(
+                        "Discovery and streaming now behave on IPv6 and on networks with several interfaces, picking the one that actually reaches the other device.",
+                        "Discovery e streaming ora si comportano bene su IPv6 e su reti con più interfacce, scegliendo quella che raggiunge davvero l'altro dispositivo."
+                    )
+                ),
+                ChangelogItem(
+                    icon = Icons.Filled.Sync,
+                    title = Bilingual("Older desktops spotted sooner", "Desktop vecchi riconosciuti prima"),
+                    body = Bilingual(
+                        "When the computer is running an older version, you are told before the connection fails rather than after, and exactly which side to update.",
+                        "Quando il computer usa una versione più vecchia, te lo dice prima che la connessione fallisca invece che dopo, e ti indica esattamente quale lato aggiornare."
+                    )
+                ),
+                ChangelogItem(
+                    icon = Icons.Filled.Computer,
+                    title = Bilingual("Update the desktop app too", "Aggiorna anche l'app desktop"),
+                    body = Bilingual(
+                        "WiFi Audio Streaming for desktop has been updated as well. Update it too so both ends stay compatible.",
+                        "Anche WiFi Audio Streaming per desktop è stata aggiornata. Aggiornala anche tu, così i due lati restano compatibili."
+                    ),
+                    linkLabel = Bilingual("Open on GitHub", "Apri su GitHub"),
+                    linkUrl = DESKTOP_RELEASES_URL,
+                    secondaryLinkLabelRes = R.string.changelog_download_from_website,
+                    secondaryLinkUrl = DESKTOP_DOWNLOAD_URL
+                )
+            )
+        ),
         ChangelogEntry(
             version = "1.1.0",
             date = Bilingual("June 2026", "Giugno 2026"),

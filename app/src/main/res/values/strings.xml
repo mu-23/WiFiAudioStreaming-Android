@@ -102,6 +102,8 @@
     <string name="status_client_connected">Client connected: %1$s. Starting…</string>
     <string name="status_handshake_failed_from_client">Handshake failed from client %1$s</string>
     <string name="status_server_error">Server error: %1$s</string>
+    <string name="status_link_lost_waiting">Network unreachable — waiting for it to come back</string>
+    <string name="status_link_restored">Network back, streaming again</string>
     <string name="status_server_stopped">Server stopped.</string>
     <string name="status_contacting_server">Contacting server %1$s…</string>
     <string name="status_waiting_for_ack">Waiting for confirmation (ACK)…</string>
@@ -219,7 +221,7 @@
     <string name="licenses_dialog_title">Open-source licenses</string>
     <string name="licenses_close">Close</string>
     <string name="onboarding_protocols_title">Multiple Protocols</string>
-    <string name="onboarding_protocols_subtitle">Choose the best way to stream audio based on your setup.</string>
+    <string name="onboarding_protocols_subtitle">Five ways to send the same audio. Pick the one that fits what you already own.</string>
 
     <string name="onboarding_proto1_title">WFAS (Native)</string>
     <string name="onboarding_proto1_desc">Requires the WiFi Audio Streaming app on both devices. It offers the best synchronization, ideal for gaming and watching videos.</string>
@@ -229,6 +231,12 @@
 
     <string name="onboarding_proto3_title">HTTP Web Stream</string>
     <string name="onboarding_proto3_desc">Listen directly from any web browser (Chrome, Safari, Smart TVs) without installing anything. Just type the server\'s IP address and port.</string>
+
+    <string name="onboarding_proto4_title">DLNA</string>
+    <string name="onboarding_proto4_desc">Push the audio straight to the DLNA renderers already on your network — Smart TVs, AV receivers, network speakers. Nothing to install on them: pick the device and it starts playing.</string>
+
+    <string name="onboarding_proto5_title">Snapcast</string>
+    <string name="onboarding_proto5_desc">Synchronised multiroom audio. Any snapclient on the network (Raspberry Pi, ESP32, Home Assistant, the Snapcast apps) joins in and stays perfectly in sync with the others.</string>
     <string name="http_latency_warning">Note: Web browsers enforce internal buffering for HTTP streams, which inevitably introduces a 1–3 second delay. This is normal and cannot be bypassed.</string>
     <string name="widget_start_transmission">Start Streaming</string>
     <string name="widget_refresh">Refresh</string>
