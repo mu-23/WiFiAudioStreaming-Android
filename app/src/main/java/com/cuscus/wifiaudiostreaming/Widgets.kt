@@ -494,10 +494,10 @@ fun DeviceItemRow(context: Context, device: ServerInfoData) {
     val bmpDevice = deviceVector.toBitmap(context, 18f)
     val bmpArrow = Icons.Rounded.ArrowForwardIos.toBitmap(context, 12f)
 
-    val intent = Intent(context, MainActivity::class.java).apply {
-        action = "com.cuscus.wifiaudiostreaming.CONNECT_CLIENT"
+    val intent = Intent(context, CommandTrampolineActivity::class.java).apply {
+        action = CommandTrampolineActivity.ACTION_CONNECT_CLIENT
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        putExtra("CONNECT_CLIENT_IP", device.ip)
+        putExtra(CommandTrampolineActivity.EXTRA_CLIENT_IP, device.ip)
     }
 
     Row(

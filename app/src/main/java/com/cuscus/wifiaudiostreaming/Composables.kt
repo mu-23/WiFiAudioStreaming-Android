@@ -1132,7 +1132,9 @@ fun SettingsScreenContent(
                                 icon = Icons.Outlined.AutoAwesome,
                                 value = appSettings.backgroundSpectrumGroove.toFloat(),
                                 range = 0f..160f,
-                                steps = 159,
+                                // A passi di 10 le tacche restano leggibili e
+                                // cadono su 50/100/150, cioe' soft/normal/hard.
+                                steps = ((160f - 0f) / 10f).toInt() - 1,
                                 valueSuffix = "",
                                 onValueChange = { groove ->
                                     onBackgroundSpectrumChange(
@@ -5164,9 +5166,13 @@ private fun scriptActionIcon(action: ScriptActionType): ImageVector = when (acti
 fun ScriptingScreen(
     isVisible: Boolean,
     scripts: List<AppScript>,
+    automationEnabled: Boolean,
+    automationToken: String,
     onClose: () -> Unit,
     onSaveScript: (AppScript) -> Unit,
     onDeleteScript: (String) -> Unit,
+    onAutomationEnabledChange: (Boolean) -> Unit,
+    onRegenerateToken: () -> Unit,
     onRunCommand: (ScriptCommand) -> Unit
 ) {
     AnimatedVisibility(
@@ -5190,9 +5196,14 @@ fun ScriptingScreen(
         var editingId by remember { mutableStateOf<String?>(null) }
         val params = remember { mutableStateMapOf<String, String>() }
 
-        val command = ScriptCommand(selectedAction, params.toMap().filterValues { it.isNotBlank() })
+        // Il comando mostrato all'utente e' quello che dovra' funzionare da
+        // fuori, quindi porta il token; quello salvato in libreria no.
+        val editedCommand = ScriptCommand(selectedAction, params.toMap().filterValues { it.isNotBlank() })
+        val signToken = automationToken.takeIf { automationEnabled && it.isNotBlank() }
+        val command = editedCommand.withToken(signToken)
         val generatedUri = command.toUri()
         val broadcastAction = command.toBroadcastAction()
+        val adbCommand = command.toAdbCommand(context.packageName)
         val selectedActionLabel = scriptActionLabel(selectedAction)
 
         fun resetEditor() {
@@ -5270,6 +5281,24 @@ fun ScriptingScreen(
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
+                }
+
+                // ── sicurezza ────────────────────────────────────────────────
+                item {
+                    ScriptingSecurityCard(
+                        enabled = automationEnabled,
+                        token = automationToken,
+                        accent = accent,
+                        onEnabledChange = onAutomationEnabledChange,
+                        onCopyToken = {
+                            haptics.confirm()
+                            clipboard.setText(AnnotatedString(automationToken))
+                        },
+                        onRegenerate = {
+                            haptics.confirm()
+                            onRegenerateToken()
+                        }
+                    )
                 }
 
                 // ── azione ───────────────────────────────────────────────────
@@ -5373,6 +5402,27 @@ fun ScriptingScreen(
 
                         Spacer(Modifier.height(16.dp))
 
+                        Text(
+                            text = stringResource(R.string.scripting_preview_adb).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp,
+                            color = accent,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                        )
+
+                        CodeBlock(
+                            text = adbCommand,
+                            accent = accent,
+                            actionIcon = Icons.Outlined.Terminal,
+                            actionDesc = stringResource(R.string.scripting_copy_adb)
+                        ) {
+                            haptics.confirm()
+                            clipboard.setText(AnnotatedString(adbCommand))
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -5405,7 +5455,7 @@ fun ScriptingScreen(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 haptics.confirm()
-                                onRunCommand(command)
+                                onRunCommand(editedCommand)
                             }
                         }
 
@@ -5508,13 +5558,20 @@ fun ScriptingScreen(
                             },
                             onCopy = {
                                 val action = ScriptActionType.fromId(script.actionId) ?: ScriptActionType.STOP
-                                clipboard.setText(AnnotatedString(ScriptCommand(action, script.params).toUri()))
+                                clipboard.setText(
+                                    AnnotatedString(
+                                        ScriptCommand(action, script.params).withToken(signToken).toUri()
+                                    )
+                                )
                             },
                             onShare = {
                                 val action = ScriptActionType.fromId(script.actionId) ?: ScriptActionType.STOP
                                 val share = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, ScriptCommand(action, script.params).toUri())
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        ScriptCommand(action, script.params).withToken(signToken).toUri()
+                                    )
                                 }
                                 context.startActivity(Intent.createChooser(share, null))
                             },
@@ -5585,6 +5642,139 @@ private fun ScriptActionChip(
         )
     }
 }
+
+@Composable
+private fun ScriptingSecurityCard(
+    enabled: Boolean,
+    token: String,
+    accent: Color,
+    onEnabledChange: (Boolean) -> Unit,
+    onCopyToken: () -> Unit,
+    onRegenerate: () -> Unit
+) {
+    val haptics = rememberAppHaptics()
+    var revealed by remember { mutableStateOf(false) }
+    // Il token torna nascosto ogni volta che viene rigenerato.
+    LaunchedEffect(token) { revealed = false }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ExpressiveHeroBadge(size = 44.dp, accent = accent) {
+                Icon(
+                    Icons.Outlined.Shield,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.scripting_security_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(
+                        if (enabled) R.string.scripting_security_state_on
+                        else R.string.scripting_security_state_off
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = enabled,
+                onCheckedChange = {
+                    haptics.toggle(it)
+                    onEnabledChange(it)
+                }
+            )
+        }
+
+        Text(
+            text = stringResource(R.string.scripting_security_explainer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        AnimatedVisibility(visible = enabled) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (revealed) token else maskToken(token),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalIconButton(
+                        onClick = { haptics.tap(); revealed = !revealed },
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = accent.copy(alpha = 0.20f),
+                            contentColor = accent
+                        )
+                    ) {
+                        Icon(
+                            if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                            contentDescription = stringResource(R.string.scripting_security_reveal),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    FilledTonalIconButton(
+                        onClick = onCopyToken,
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = accent.copy(alpha = 0.20f),
+                            contentColor = accent
+                        )
+                    ) {
+                        Icon(
+                            Icons.Outlined.ContentCopy,
+                            contentDescription = stringResource(R.string.scripting_security_copy_token),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                ScriptActionButton(
+                    icon = Icons.Outlined.Refresh,
+                    label = stringResource(R.string.scripting_security_regenerate),
+                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    content = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onRegenerate
+                )
+
+                Text(
+                    text = stringResource(R.string.scripting_security_share_warning),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private fun maskToken(token: String): String =
+    if (token.length <= 8) "••••••••" else token.take(6) + "•".repeat(12)
 
 @Composable
 private fun CodeBlock(

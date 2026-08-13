@@ -86,6 +86,16 @@
 
         </activity>
 
+        <!-- Ingresso privato per tile e widget: non esportato apposta, cosi'
+             nessun'altra app puo' far partire una connessione client. -->
+        <activity
+            android:name=".CommandTrampolineActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <receiver
             android:name=".StreamingActionReceiver"
             android:exported="false">

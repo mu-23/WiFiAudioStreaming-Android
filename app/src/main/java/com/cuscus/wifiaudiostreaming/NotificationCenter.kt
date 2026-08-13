@@ -35,10 +35,12 @@ object NotificationCenter {
     const val ID_SERVER = 101
     const val ID_CLIENT = 201
     const val ID_AUTO_CONNECT = 301
+    const val ID_AUTOMATION_BLOCKED = 401
 
     const val CHANNEL_SERVER = "wfas_server_v3"
     const val CHANNEL_CLIENT = "wfas_client_v3"
     const val CHANNEL_AUTO_CONNECT = "wfas_auto_connect_v3"
+    const val CHANNEL_AUTOMATION = "wfas_automation_v1"
 
     const val MIN_VOLUME = 0.0f
     const val MAX_VOLUME = 2.0f
@@ -80,6 +82,12 @@ object NotificationCenter {
                     CHANNEL_AUTO_CONNECT,
                     R.string.notif_channel_auto_connect_name,
                     R.string.notif_channel_auto_connect_desc
+                ),
+                silentChannel(
+                    context,
+                    CHANNEL_AUTOMATION,
+                    R.string.notif_channel_automation_name,
+                    R.string.notif_channel_automation_desc
                 )
             )
         )
@@ -188,6 +196,34 @@ object NotificationCenter {
 
         return builder.build()
     }
+
+    // Un comando esterno rifiutato non deve sparire in silenzio: l'utente che ha
+    // appena aggiornato deve capire che serve il token, non pensare a un bug.
+    fun automationBlockedNotification(context: Context, disabled: Boolean): Notification =
+        NotificationCompat.Builder(context, CHANNEL_AUTOMATION)
+            .setSmallIcon(R.drawable.ic_notif_shield)
+            .setColor(ContextCompat.getColor(context, R.color.notif_accent))
+            .setContentIntent(openApp(context))
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentTitle(context.getString(R.string.notif_automation_blocked_title))
+            .setContentText(
+                context.getString(
+                    if (disabled) R.string.notif_automation_blocked_disabled
+                    else R.string.notif_automation_blocked_token
+                )
+            )
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText(
+                    context.getString(
+                        if (disabled) R.string.notif_automation_blocked_disabled
+                        else R.string.notif_automation_blocked_token
+                    )
+                )
+            )
+            .setLocalOnly(true)
+            .setAutoCancel(true)
+            .build()
 
     private fun baseBuilder(
         context: Context,

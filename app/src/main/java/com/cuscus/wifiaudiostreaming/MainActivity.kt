@@ -87,6 +87,7 @@ import com.cuscus.wifiaudiostreaming.ui.theme.WiFiAudioStreamingTheme
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import com.cuscus.wifiaudiostreaming.scripting.AutomationGate
 import com.cuscus.wifiaudiostreaming.scripting.ResolvedServerParams
 import com.cuscus.wifiaudiostreaming.scripting.ScriptActionType
 import com.cuscus.wifiaudiostreaming.scripting.ScriptCommand
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
 
     private var pendingServerParams: ResolvedServerParams? = null
     private val pendingCommand = mutableStateOf<ScriptCommand?>(null)
+    private val pendingConnectIp = mutableStateOf<String?>(null)
     private val forceDonation = mutableStateOf(false)
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -232,8 +234,8 @@ class MainActivity : ComponentActivity() {
         NetworkManager.prewarmAudio()
         NetworkManager.startNetworkWatch(applicationContext)
 
-        pendingCommand.value = ScriptCommand.fromIntent(intent)
         consumePairingIntent(intent)
+        intakeExternalCommand(intent)
 
         setContent {
             WiFiAudioStreamingTheme {
@@ -368,8 +370,41 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingCommand.value = ScriptCommand.fromIntent(intent)
         consumePairingIntent(intent)
+        intakeExternalCommand(intent)
+    }
+
+    /**
+     * L'Activity e' esportata e risponde allo schema `wifiaudio://`, quindi
+     * qualsiasi app puo' aprirla con un comando dentro. Nessun comando arriva a
+     * [executeScriptCommand] senza passare da [AutomationGate]; l'unica
+     * eccezione e' il rimbalzo interno dal receiver, che porta un nonce monouso
+     * al posto del token.
+     */
+    private fun intakeExternalCommand(intent: Intent?) {
+        if (intent == null) return
+
+        val handoffId = runCatching { intent.getStringExtra(AutomationGate.EXTRA_HANDOFF) }.getOrNull()
+        if (handoffId != null) {
+            intent.removeExtra(AutomationGate.EXTRA_HANDOFF)
+            when (val trusted = AutomationGate.consumeHandoff(handoffId)) {
+                is AutomationGate.TrustedAction.Command -> pendingCommand.value = trusted.command
+                is AutomationGate.TrustedAction.ConnectClient -> pendingConnectIp.value = trusted.ip
+                null -> Unit
+            }
+            return
+        }
+
+        val command = ScriptCommand.fromIntent(intent) ?: return
+        // Consumato subito: una rotazione o un ritorno da background non deve
+        // rieseguire il comando ne' ritentare la validazione.
+        intent.data = null
+        intent.action = null
+        lifecycleScope.launch {
+            if (AutomationGate.authorize(applicationContext, command)) {
+                pendingCommand.value = command.withToken(null)
+            }
+        }
     }
 
     private fun consumePairingIntent(intent: Intent?) {
@@ -462,6 +497,7 @@ class MainActivity : ComponentActivity() {
         val showSettingsScreen = remember { mutableStateOf(false) }
         val showScriptingScreen = remember { mutableStateOf(false) }
         val scripts by viewModel.scripts.collectAsStateWithLifecycle()
+        val automationToken by viewModel.automationToken.collectAsStateWithLifecycle()
 
         val isServer by viewModel.isServer.collectAsStateWithLifecycle()
         val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
@@ -565,18 +601,21 @@ class MainActivity : ComponentActivity() {
         }
 
         val intentAction = intent.action
-        val connectClientIp = intent.getStringExtra("CONNECT_CLIENT_IP")
+
+        // Non c'e' piu' un ramo CONNECT_CLIENT: collegarsi a un IP arbitrario e'
+        // l'azione piu' pericolosa raggiungibile dall'esterno, e ora arriva solo
+        // da CommandTrampolineActivity con un nonce monouso.
+        LaunchedEffect(pendingConnectIp.value) {
+            pendingConnectIp.value?.let { ip ->
+                pendingConnectIp.value = null
+                viewModel.startClientManually(ip)
+            }
+        }
 
         LaunchedEffect(intentAction) {
             when (intentAction) {
                 "com.cuscus.wifiaudiostreaming.START_SERVER" -> {
                     startMediaProjectionRequest()
-                    intent.action = null
-                }
-                "com.cuscus.wifiaudiostreaming.CONNECT_CLIENT" -> {
-                    if (connectClientIp != null) {
-                        viewModel.startClientManually(connectClientIp)
-                    }
                     intent.action = null
                 }
                 "com.cuscus.wifiaudiostreaming.STOP_STREAMING" -> {
@@ -765,9 +804,13 @@ class MainActivity : ComponentActivity() {
         ScriptingScreen(
             isVisible = showScriptingScreen.value,
             scripts = scripts,
+            automationEnabled = currentSettings.automationEnabled,
+            automationToken = automationToken,
             onClose = { showScriptingScreen.value = false },
             onSaveScript = viewModel::saveScript,
             onDeleteScript = viewModel::deleteScript,
+            onAutomationEnabledChange = viewModel::setAutomationEnabled,
+            onRegenerateToken = viewModel::regenerateAutomationToken,
             onRunCommand = { command -> executeScriptCommand(command) }
         )
 

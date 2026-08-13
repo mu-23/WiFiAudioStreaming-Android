@@ -27,7 +27,9 @@ import androidx.lifecycle.viewModelScope
 import com.cuscus.wifiaudiostreaming.data.AppScript
 import com.cuscus.wifiaudiostreaming.data.AppSettings
 import com.cuscus.wifiaudiostreaming.data.AutoConnectEntry
+import com.cuscus.wifiaudiostreaming.data.SecretStore
 import com.cuscus.wifiaudiostreaming.data.SettingsDataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -185,12 +187,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val _automationToken = MutableStateFlow("")
+    val automationToken: StateFlow<String> = _automationToken.asStateFlow()
+
+    fun setAutomationEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setAutomationEnabled(enabled) }
+    }
+
+    fun regenerateAutomationToken() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { SecretStore.get(getApplication()).regenerateAutomationToken() }
+        }
+    }
+
     init {
         viewModelScope.launch {
             settingsDataStore.settingsFlow.first().let { settings ->
                 if (!NetworkManager.isStreamingCurrent.value) {
                     _isMulticastMode.value = settings.lastMulticastMode
                 }
+            }
+        }
+        // Il token deve esistere prima che arrivi il primo comando esterno:
+        // senza, il gate nega e basta. Aprire il file cifrato passa dal
+        // Keystore, quindi si fa su IO.
+        viewModelScope.launch(Dispatchers.IO) {
+            settingsDataStore.purgeLegacyPlaintextToken()
+            runCatching {
+                val secrets = SecretStore.get(getApplication())
+                secrets.ensureAutomationToken()
+                secrets.automationToken.collect { _automationToken.value = it }
             }
         }
         viewModelScope.launch {

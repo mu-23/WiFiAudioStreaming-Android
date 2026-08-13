@@ -1,19 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 12 e successivi.
+
+    Il file dei segreti e' cifrato con una chiave che vive nel Keystore e non
+    esce dal dispositivo: portarselo dietro produrrebbe solo un blob illeggibile,
+    quindi si esclude sia dal backup cloud sia dal trasferimento fra dispositivi.
+    Il token di automazione deve restare legato al telefono che lo ha generato.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="wfas_secrets.xml" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="wfas_secrets.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

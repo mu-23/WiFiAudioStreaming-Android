@@ -23,6 +23,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.cuscus.wifiaudiostreaming.UsbLink
 import com.cuscus.wifiaudiostreaming.WfasPolicy
+import com.cuscus.wifiaudiostreaming.scripting.AutomationGate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -98,7 +99,10 @@ data class AppSettings(
     val backgroundSpectrumEnabled: Boolean = false,
     val backgroundSpectrumStyle: String = "BARS",
     val backgroundSpectrumBlackoutOnly: Boolean = false,
-    val backgroundSpectrumGroove: Int = 0
+    val backgroundSpectrumGroove: Int = 0,
+    // Spento di default: chi non usa Tasker o i tag NFC non ha nessun ingresso
+    // esterno aperto, e chi li usa lo accende sapendo cosa sta accendendo.
+    val automationEnabled: Boolean = false
 )
 
 class SettingsDataStore(context: Context) {
@@ -159,6 +163,8 @@ class SettingsDataStore(context: Context) {
         val BACKGROUND_SPECTRUM_STYLE = stringPreferencesKey("background_spectrum_style")
         val BACKGROUND_SPECTRUM_BLACKOUT_ONLY = booleanPreferencesKey("background_spectrum_blackout_only")
         val BACKGROUND_SPECTRUM_GROOVE = intPreferencesKey("background_spectrum_groove")
+        val AUTOMATION_ENABLED = booleanPreferencesKey("automation_enabled")
+        val LEGACY_AUTOMATION_TOKEN = stringPreferencesKey("automation_token")
     }
 
     val scriptsFlow: Flow<List<AppScript>> = dataStore.data.map { preferences ->
@@ -233,8 +239,24 @@ class SettingsDataStore(context: Context) {
             backgroundSpectrumEnabled = preferences[PreferencesKeys.BACKGROUND_SPECTRUM_ENABLED] ?: false,
             backgroundSpectrumStyle = preferences[PreferencesKeys.BACKGROUND_SPECTRUM_STYLE] ?: "BARS",
             backgroundSpectrumBlackoutOnly = preferences[PreferencesKeys.BACKGROUND_SPECTRUM_BLACKOUT_ONLY] ?: false,
-            backgroundSpectrumGroove = preferences[PreferencesKeys.BACKGROUND_SPECTRUM_GROOVE] ?: 0
+            backgroundSpectrumGroove = preferences[PreferencesKeys.BACKGROUND_SPECTRUM_GROOVE] ?: 0,
+            automationEnabled = preferences[PreferencesKeys.AUTOMATION_ENABLED] ?: false
         )
+    }
+
+    suspend fun setAutomationEnabled(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTOMATION_ENABLED] = enabled
+        }
+    }
+
+    // Il token e' passato a SecretStore, che lo cifra col Keystore. Se una build
+    // precedente ne aveva lasciato una copia in chiaro qui dentro va rimossa,
+    // altrimenti resterebbe leggibile nel file del DataStore e nei backup.
+    suspend fun purgeLegacyPlaintextToken() {
+        dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.LEGACY_AUTOMATION_TOKEN)
+        }
     }
 
     suspend fun saveBackgroundSpectrumSettings(enabled: Boolean, style: String, blackoutOnly: Boolean = false, groove: Int = 0) {

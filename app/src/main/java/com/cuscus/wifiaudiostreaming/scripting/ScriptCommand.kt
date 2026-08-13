@@ -72,6 +72,12 @@ object ScriptParams {
     const val SNAPCASTCODEC = "snapcastcodec"
     const val WFASMODE = "wfasmode"
 
+    // Non e' un parametro di streaming ma la credenziale che autorizza i comandi
+    // che arrivano da fuori dal processo: tenuto fuori da ALL apposta, cosi'
+    // nessun esecutore puo' scambiarlo per un'impostazione e nessuno script
+    // salvato se lo porta dietro.
+    const val TOKEN = "token"
+
     val ALL = listOf(
         INTERNAL, MIC, SAMPLERATE, CHANNELS, BUFFER, PORT, MICPORT, MULTICAST,
         RTP, RTPPORT, HTTP, HTTPPORT, HTTPSAFARI, IFACE, IP, CLIENTMIC, CLIENTIP,
@@ -92,7 +98,8 @@ object ScriptParams {
 
 data class ScriptCommand(
     val action: ScriptActionType,
-    val params: Map<String, String> = emptyMap()
+    val params: Map<String, String> = emptyMap(),
+    val token: String? = null
 ) {
 
     fun toUri(): String {
@@ -102,14 +109,22 @@ data class ScriptCommand(
         params.filter { it.value.isNotBlank() }.forEach { (key, value) ->
             builder.appendQueryParameter(key, value)
         }
+        token?.takeIf { it.isNotBlank() }?.let {
+            builder.appendQueryParameter(ScriptParams.TOKEN, it)
+        }
         return builder.build().toString()
     }
+
+    fun withToken(token: String?): ScriptCommand =
+        copy(token = token?.trim()?.takeIf { it.isNotBlank() })
 
     fun toBroadcastAction(): String = ACTION_PREFIX + action.name
 
     fun toAdbCommand(packageName: String): String {
-        val extras = params.filter { it.value.isNotBlank() }
-            .entries.joinToString(" ") { (k, v) -> "-e $k \"$v\"" }
+        val extras = buildMap<String, String> {
+            putAll(params.filter { it.value.isNotBlank() })
+            token?.takeIf { it.isNotBlank() }?.let { put(ScriptParams.TOKEN, it) }
+        }.entries.joinToString(" ") { (k, v) -> "-e $k \"$v\"" }
         return "am broadcast -a ${toBroadcastAction()} -n $packageName/.scripting.ScriptCommandReceiver $extras".trim()
     }
 
@@ -124,11 +139,16 @@ data class ScriptCommand(
         fun fromUri(uri: Uri): ScriptCommand? {
             val action = ScriptActionType.fromId(uri.host ?: uri.authority) ?: return null
             val params = mutableMapOf<String, String>()
-            for (key in uri.queryParameterNames) {
-                val value = uri.getQueryParameter(key)
-                if (!value.isNullOrBlank()) params[key.lowercase()] = value
+            var token: String? = null
+            val names = runCatching { uri.queryParameterNames }.getOrNull().orEmpty()
+            for (key in names) {
+                val value = runCatching { uri.getQueryParameter(key) }.getOrNull()
+                if (value.isNullOrBlank()) continue
+                val normalized = key.lowercase()
+                if (normalized == ScriptParams.TOKEN) token = value.trim()
+                else params[normalized] = value
             }
-            return ScriptCommand(action, params)
+            return ScriptCommand(action, params, token)
         }
 
         fun fromIntent(intent: Intent): ScriptCommand? {
@@ -140,14 +160,17 @@ data class ScriptCommand(
             if (!rawAction.startsWith(ACTION_PREFIX)) return null
             val action = ScriptActionType.fromName(rawAction.removePrefix(ACTION_PREFIX)) ?: return null
             val params = mutableMapOf<String, String>()
-            val extras = intent.extras
+            var token: String? = null
+            val extras = runCatching { intent.extras }.getOrNull()
             if (extras != null) {
                 for (key in ScriptParams.ALL) {
-                    val value = extras.get(key)?.toString()
+                    val value = runCatching { extras.get(key)?.toString() }.getOrNull()
                     if (!value.isNullOrBlank()) params[key] = value
                 }
+                token = runCatching { extras.get(ScriptParams.TOKEN)?.toString() }
+                    .getOrNull()?.trim()?.takeIf { it.isNotBlank() }
             }
-            return ScriptCommand(action, params)
+            return ScriptCommand(action, params, token)
         }
     }
 }

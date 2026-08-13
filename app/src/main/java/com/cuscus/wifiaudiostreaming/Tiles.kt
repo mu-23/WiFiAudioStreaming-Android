@@ -108,9 +108,9 @@ class ClientTileService : BaseStreamingTileService() {
             }
 
             if (ip.isNotBlank()) {
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    action = "com.cuscus.wifiaudiostreaming.CONNECT_CLIENT"
-                    putExtra("CONNECT_CLIENT_IP", ip)
+                val intent = Intent(this, CommandTrampolineActivity::class.java).apply {
+                    action = CommandTrampolineActivity.ACTION_CONNECT_CLIENT
+                    putExtra(CommandTrampolineActivity.EXTRA_CLIENT_IP, ip)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 }
                 startActivitySafely(intent)
