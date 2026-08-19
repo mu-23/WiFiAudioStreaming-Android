@@ -31,10 +31,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Unico ingresso per i comandi via broadcast. E' `exported` perche' Tasker,
- * MacroDroid e `adb shell am broadcast` devono poterlo raggiungere, quindi
- * qualsiasi app installata puo' bussare: nessun comando viene eseguito prima che
- * [AutomationGate] abbia validato il token.
+ * The only broadcast entry point for commands. It has to be `exported` for
+ * Tasker, MacroDroid and `adb shell am broadcast` to reach it, so nothing is
+ * dispatched until [AutomationGate] has validated the token.
  */
 class ScriptCommandReceiver : BroadcastReceiver() {
 
@@ -47,7 +46,7 @@ class ScriptCommandReceiver : BroadcastReceiver() {
                 val store = SettingsDataStore(appContext)
                 val settings = store.settingsFlow.first()
                 if (!AutomationGate.authorize(appContext, settings, command)) return@launch
-                // Da qui in poi il token non serve piu' e non deve circolare.
+                // The token has done its job: it must not travel any further.
                 dispatch(appContext, store, settings, command.withToken(null))
             } finally {
                 pending.finish()
@@ -79,8 +78,8 @@ class ScriptCommandReceiver : BroadcastReceiver() {
         }
     }
 
-    // Lo stop tocca AudioTrack e servizi: resta sul main thread come quando
-    // veniva eseguito direttamente in onReceive.
+    // Stopping touches AudioTrack and services, so it stays on the main thread,
+    // as it was when it ran directly inside onReceive.
     private suspend fun stopStreaming(context: Context) = withContext(Dispatchers.Main) {
         ScriptExecutor.stop(context)
     }
@@ -101,10 +100,10 @@ class ScriptCommandReceiver : BroadcastReceiver() {
         }
     }
 
-    // L'audio interno richiede il consenso MediaProjection, che solo un'Activity
-    // puo' chiedere. Il comando e' gia' autorizzato: viaggia come nonce monouso
-    // invece che come URI, cosi' il token non finisce nei log di sistema ne' in
-    // un Intent che un'altra app potrebbe imitare.
+    // Internal audio needs MediaProjection consent, which only an Activity can
+    // ask for. The command is already authorised, so it travels as a single-use
+    // nonce rather than a URI: that keeps the token out of the system logs and
+    // out of any Intent.
     private fun launchActivityForProjection(context: Context, command: ScriptCommand) {
         val handoff = AutomationGate.issueHandoff(AutomationGate.TrustedAction.Command(command))
         val intent = Intent(context, MainActivity::class.java).apply {

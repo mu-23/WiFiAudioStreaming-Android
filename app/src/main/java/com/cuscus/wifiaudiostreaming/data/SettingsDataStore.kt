@@ -28,19 +28,81 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-data class AutoConnectEntry(val ip: String, val ssid: String = "") {
-    override fun toString() = "$ip|$ssid"
+/**
+ * A server in the auto-connect list.
+ *
+ * Beyond the address and the Wi-Fi SSID it was always matched on, an entry now
+ * carries what an unattended connection to a KEY-mode server needs: an optional
+ * port override, a label, an enabled flag, and a reference to the key. The key
+ * itself is never stored here and never reaches the settings DataStore — only the
+ * lookup name (`keyRef`) is kept, and the key lives in [SecretStore], encrypted
+ * with a Keystore key that does not leave the device. Same model as the desktop
+ * `AutoConnectTarget`.
+ *
+ * Serialisation stays backward compatible: an old `ip|ssid` entry parses with
+ * every new field at its default. The delimiters `%`, `|` and `,` are escaped in
+ * the free-text fields so a label or SSID can contain them.
+ */
+data class AutoConnectEntry(
+    val ip: String,
+    val ssid: String = "",
+    val port: Int? = null,
+    val label: String = "",
+    val enabled: Boolean = true,
+    val keyRef: String = ""
+) {
+    val hasKey: Boolean get() = keyRef.isNotBlank()
+
+    fun displayName(): String = label.ifBlank { ip }
+
+    override fun toString(): String = buildString {
+        append(esc(ip))
+        append('|').append(esc(ssid))
+        port?.let { append("|port=").append(it) }
+        if (label.isNotBlank()) append("|label=").append(esc(label))
+        if (keyRef.isNotBlank()) append("|key=").append(keyRef)
+        if (!enabled) append("|off")
+    }
+
     companion object {
+        fun newKeyRef(): String =
+            java.lang.Long.toHexString(System.currentTimeMillis()) + "-" +
+                java.lang.Integer.toHexString((0..0xFFFF).random())
+
         fun fromString(str: String): AutoConnectEntry {
             val parts = str.split("|")
-            return AutoConnectEntry(parts[0], parts.getOrNull(1) ?: "")
+            val ip = unesc(parts.getOrNull(0)?.trim().orEmpty())
+            val ssid = unesc(parts.getOrNull(1)?.trim().orEmpty())
+            var port: Int? = null
+            var label = ""
+            var keyRef = ""
+            var enabled = true
+            for (opt in parts.drop(2)) {
+                val o = opt.trim()
+                when {
+                    o.equals("off", true)        -> enabled = false
+                    o.equals("on", true)         -> enabled = true
+                    o.startsWith("port=", true)  -> port = o.substringAfter('=').toIntOrNull()?.takeIf { it in 1..65535 }
+                    o.startsWith("label=", true) -> label = unesc(o.substringAfter('='))
+                    o.startsWith("key=", true)   -> keyRef = o.substringAfter('=').trim()
+                }
+            }
+            return AutoConnectEntry(ip, ssid, port, label, enabled, keyRef)
         }
-        fun parseList(str: String): List<AutoConnectEntry> {
-            return str.split(",").filter { it.isNotBlank() }.map { fromString(it) }
-        }
-        fun serializeList(list: List<AutoConnectEntry>): String {
-            return list.joinToString(",") { it.toString() }
-        }
+
+        fun parseList(str: String): List<AutoConnectEntry> =
+            str.split(",").filter { it.isNotBlank() }.map { fromString(it) }
+
+        fun serializeList(list: List<AutoConnectEntry>): String =
+            list.joinToString(",") { it.toString() }
+
+        private fun esc(s: String): String =
+            s.replace("%", "%25").replace("|", "%7C").replace(",", "%2C").replace("\n", " ")
+
+        private fun unesc(s: String): String =
+            s.replace("%7C", "|").replace("%7c", "|")
+                .replace("%2C", ",").replace("%2c", ",")
+                .replace("%25", "%")
     }
 }
 
@@ -74,6 +136,11 @@ data class AppSettings(
     val snapcastBufferMs: Int = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.BUFFER_MS,
     val snapcastStreamName: String = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.STREAM_NAME,
     val lastMulticastMode: Boolean = false,
+    // Muto il volume media mentre catturo l'audio interno, cosi' non si sente due
+    // volte; spento, si sente sia qui che sul client.
+    val muteRender: Boolean = true,
+    // In unicast: quando il client si stacca finisce la sessione, non il server.
+    val serverPersist: Boolean = false,
     val clientTileIp: String = "",
     val autoConnectEnabled: Boolean = false,
     val autoConnectList: String = "",
@@ -126,6 +193,8 @@ class SettingsDataStore(context: Context) {
         val MIC_PORT = intPreferencesKey("mic_port")
         val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
         val LAST_MULTICAST_MODE = booleanPreferencesKey("last_multicast_mode")
+        val MUTE_RENDER = booleanPreferencesKey("mute_render")
+        val SERVER_PERSIST = booleanPreferencesKey("server_persist")
         val NETWORK_INTERFACE = stringPreferencesKey("network_interface")
         val RTP_ENABLED = booleanPreferencesKey("rtp_enabled")
         val RTP_PORT = intPreferencesKey("rtp_port")
@@ -189,6 +258,8 @@ class SettingsDataStore(context: Context) {
             micPort = preferences[PreferencesKeys.MIC_PORT] ?: 9092,
             onboardingCompleted = preferences[PreferencesKeys.ONBOARDING_COMPLETED] ?: false,
             lastMulticastMode = preferences[PreferencesKeys.LAST_MULTICAST_MODE] ?: false,
+            muteRender = preferences[PreferencesKeys.MUTE_RENDER] ?: true,
+            serverPersist = preferences[PreferencesKeys.SERVER_PERSIST] ?: false,
             networkInterface = preferences[PreferencesKeys.NETWORK_INTERFACE] ?: "Auto",
             rtpEnabled = preferences[PreferencesKeys.RTP_ENABLED] ?: false,
             rtpPort = preferences[PreferencesKeys.RTP_PORT] ?: 9094,
@@ -284,6 +355,18 @@ class SettingsDataStore(context: Context) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.STREAM_INTERNAL] = streamInternal
             preferences[PreferencesKeys.STREAM_MIC] = streamMic
+        }
+    }
+
+    suspend fun saveMuteRender(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.MUTE_RENDER] = enabled
+        }
+    }
+
+    suspend fun saveServerPersist(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SERVER_PERSIST] = enabled
         }
     }
 

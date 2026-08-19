@@ -44,18 +44,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <intent-filter android:autoVerify="false">
+            <!-- One filter, no host: it already covers every wifiaudio:// authority,
+                 pairing included, so a second one for host="pair" would only be a
+                 duplicate. autoVerify has no meaning on a custom scheme - it applies
+                 to http/https app links, which are declared separately below. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="wifiaudio" />
-            </intent-filter>
-
-            <intent-filter android:autoVerify="false">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="wifiaudio" android:host="pair" />
             </intent-filter>
 
             <intent-filter android:autoVerify="true">

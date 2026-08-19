@@ -172,8 +172,8 @@ object Changelog {
                         "L'automazione ora richiede il tuo token"
                     ),
                     body = Bilingual(
-                        "NFC tags, Tasker, MacroDroid and ADB reach the app through a public entry point, so any installed app could send a command too. External commands are now off until you turn them on, and once on only those carrying your secret token run. If you use automations, open Automation & Scripting: turn the switch on, then copy the URIs and commands generated there — they already include the token.",
-                        "I tag NFC, Tasker, MacroDroid e ADB raggiungono l'app da un ingresso pubblico, quindi anche qualsiasi altra app installata poteva inviare un comando. Ora i comandi esterni sono spenti finché non li attivi, e una volta attivi vengono eseguiti solo quelli che portano il tuo token segreto. Se usi le automazioni, apri Automazione e scripting: accendi l'interruttore, poi ricopia gli URI e i comandi generati lì, che il token lo includono già."
+                        "Commands arriving from outside the app — NFC tags, Tasker, MacroDroid, ADB — are now off until you turn them on, and once on only those carrying your personal token are accepted. If you use automations, open Automation & Scripting: turn the switch on, then copy the URIs and commands generated there — they already include the token.",
+                        "I comandi che arrivano da fuori dall'app — tag NFC, Tasker, MacroDroid, ADB — ora sono spenti finché non li attivi, e una volta attivi vengono accettati solo quelli che portano il tuo token personale. Se usi le automazioni, apri Automazione e scripting: accendi l'interruttore, poi ricopia gli URI e i comandi generati lì, che il token lo includono già."
                     )
                 ),
                 ChangelogItem(

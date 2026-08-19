@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    The target is CommandTrampolineActivity, not MainActivity.
+
+    MainActivity is exported, so an action it reads out of an incoming Intent
+    says nothing about where that Intent came from - a shortcut would be
+    indistinguishable from anything else. The trampoline is not exported, and
+    shortcuts still reach it because the system launches them with the identity
+    of the app that publishes them rather than the launcher's.
+-->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
 
     <shortcut
@@ -8,9 +17,9 @@
         android:shortcutShortLabel="@string/shortcut_start_server_short"
         android:shortcutLongLabel="@string/shortcut_start_server_long">
         <intent
-            android:action="com.cuscus.wifiaudiostreaming.START_SERVER"
+            android:action="com.cuscus.wifiaudiostreaming.internal.START_SERVER"
             android:targetPackage="com.cuscus.wifiaudiostreaming"
-            android:targetClass="com.cuscus.wifiaudiostreaming.MainActivity" />
+            android:targetClass="com.cuscus.wifiaudiostreaming.CommandTrampolineActivity" />
     </shortcut>
 
     <shortcut
@@ -20,9 +29,9 @@
         android:shortcutShortLabel="@string/shortcut_stop_short"
         android:shortcutLongLabel="@string/shortcut_stop_long">
         <intent
-            android:action="com.cuscus.wifiaudiostreaming.STOP_STREAMING"
+            android:action="com.cuscus.wifiaudiostreaming.internal.STOP_STREAMING"
             android:targetPackage="com.cuscus.wifiaudiostreaming"
-            android:targetClass="com.cuscus.wifiaudiostreaming.MainActivity" />
+            android:targetClass="com.cuscus.wifiaudiostreaming.CommandTrampolineActivity" />
     </shortcut>
 
 </shortcuts>

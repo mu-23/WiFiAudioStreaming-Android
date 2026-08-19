@@ -23,14 +23,19 @@ import android.os.Bundle
 import com.cuscus.wifiaudiostreaming.scripting.AutomationGate
 
 /**
- * Ingresso privato per tile e widget.
+ * Private entry point for tiles, widgets and shortcuts.
  *
- * La MainActivity e' esportata (le serve per il launcher e per i deep link),
- * quindi qualsiasi app potrebbe inviarle un Intent con l'azione giusta: un
- * "connetti al client" arrivato da fuori collegherebbe il telefono a un IP
- * scelto dall'attaccante, microfono incluso, senza mostrare nulla. Questa
- * Activity e' `exported="false"`, quindi la puo' raggiungere solo il nostro
- * processo, e passa alla MainActivity un nonce monouso invece dell'azione nuda.
+ * MainActivity has to stay exported for the launcher and the deep links, so
+ * anything it acts on directly is part of the app's public surface. The
+ * requests that matter therefore do not go to it: they come here first. This
+ * Activity is `exported="false"`, so only our own process can reach it, and
+ * what it hands to MainActivity is a single-use nonce rather than a bare
+ * action.
+ *
+ * Connecting to a given address is the most sensitive of the three, since it
+ * points the audio path, microphone included, at whatever host it is handed.
+ * Start and stop use the same door: every caller we have - tiles, widgets,
+ * shortcuts - lives inside the app, so none of them needs a public one.
  */
 class CommandTrampolineActivity : Activity() {
 
@@ -38,27 +43,43 @@ class CommandTrampolineActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val ip = intent?.getStringExtra(EXTRA_CLIENT_IP)?.trim()
-        if (intent?.action == ACTION_CONNECT_CLIENT && !ip.isNullOrBlank()) {
-            val handoff = AutomationGate.issueHandoff(AutomationGate.TrustedAction.ConnectClient(ip))
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    putExtra(AutomationGate.EXTRA_HANDOFF, handoff)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                }
-            )
+        val trusted = when (intent?.action) {
+            ACTION_CONNECT_CLIENT ->
+                if (ip.isNullOrBlank()) null
+                else AutomationGate.TrustedAction.ConnectClient(ip)
+            ACTION_START_SERVER   -> AutomationGate.TrustedAction.StartServer
+            ACTION_STOP_STREAMING -> AutomationGate.TrustedAction.StopStreaming
+            else -> null
+        }
+
+        val forward = Intent(this, MainActivity::class.java)
+        if (trusted == null) {
+            forward.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         } else {
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            forward.putExtra(AutomationGate.EXTRA_HANDOFF, AutomationGate.issueHandoff(trusted))
+            forward.addFlags(
+                if (trusted is AutomationGate.TrustedAction.ConnectClient) {
+                    // Connect starts from a clean screen, as it did before.
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                } else {
+                    // Start and stop are toggles: if the app is already open we
+                    // bring it forward through onNewIntent instead of recreating
+                    // it, so tapping the widget does not reset the user's screen.
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
                 }
             )
         }
+        startActivity(forward)
 
         finish()
     }
 
     companion object {
         const val ACTION_CONNECT_CLIENT = "com.cuscus.wifiaudiostreaming.internal.CONNECT_CLIENT"
+        const val ACTION_START_SERVER   = "com.cuscus.wifiaudiostreaming.internal.START_SERVER"
+        const val ACTION_STOP_STREAMING = "com.cuscus.wifiaudiostreaming.internal.STOP_STREAMING"
         const val EXTRA_CLIENT_IP = "CONNECT_CLIENT_IP"
     }
 }

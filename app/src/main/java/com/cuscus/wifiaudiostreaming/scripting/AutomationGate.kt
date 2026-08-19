@@ -33,18 +33,17 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Filtro unico per tutto cio' che arriva da fuori dal processo.
+ * Single gate for everything that reaches the app from outside the process.
  *
- * Il receiver e' `exported` e la MainActivity ha un intent-filter `wifiaudio://`:
- * entrambi sono raggiungibili da qualsiasi app installata, e un permesso custom
- * non e' una via percorribile perche' Tasker, MacroDroid e i tag NFC non possono
- * dichiararlo. Al posto del permesso ogni comando esterno deve portare un token
- * che vive solo nello storage privato dell'app, quindi un'app terza non lo puo'
- * leggere e non puo' costruire un comando valido.
+ * Automation has to stay usable by tools that cannot declare a custom
+ * permission - Tasker, MacroDroid, NFC tags, `adb shell am broadcast` - so
+ * holding a token takes the place of holding a permission. The token lives
+ * only in the app's private encrypted storage, and a command that does not
+ * carry it is refused.
  *
- * Le chiamate interne (pulsante "Esegui", tile, widget, shortcut) non passano
- * di qui: costruiscono l'oggetto comando in memoria senza mai attraversare un
- * Intent pubblico.
+ * Internal callers (the "Run" button, tiles, widgets, shortcuts) never come
+ * through here: they build the command object in memory and it never travels
+ * on a public Intent.
  */
 object AutomationGate {
 
@@ -53,9 +52,9 @@ object AutomationGate {
     enum class Verdict { ALLOWED, DISABLED, BAD_TOKEN, THROTTLED }
 
     private const val TOKEN_BYTES = 32
-    // Il token e' abbastanza lungo da rendere il bruteforce impossibile, ma un
-    // tentativo a raffica costa comunque batteria: dopo qualche errore si smette
-    // di rispondere per il resto della finestra.
+    // The token is long enough that guessing is not the concern, but repeated
+    // attempts still cost battery: after a few failures the gate stops answering
+    // for the rest of the window.
     internal const val FAILURE_WINDOW_MS = 60_000L
     internal const val MAX_FAILURES_PER_WINDOW = 8
     private const val NOTICE_INTERVAL_MS = 30_000L
@@ -78,8 +77,8 @@ object AutomationGate {
     }
 
     /**
-     * Aprire il file cifrato passa dal Keystore, quindi la lettura del token va
-     * fatta fuori dal main thread.
+     * Opening the encrypted file goes through the Keystore, so reading the token
+     * has to happen off the main thread.
      */
     suspend fun authorize(context: Context, settings: AppSettings, command: ScriptCommand): Boolean {
         val appContext = context.applicationContext
@@ -106,7 +105,7 @@ object AutomationGate {
             failures = 0
         }
         if (failures >= MAX_FAILURES_PER_WINDOW) return Verdict.THROTTLED
-        // Un token atteso vuoto non autorizza nulla: il default e' sempre "nego".
+        // A blank expected token authorises nothing: the default is always deny.
         if (expected.isBlank() || provided.isNullOrBlank() || !constantTimeEquals(expected, provided)) {
             failures++
             return Verdict.BAD_TOKEN
@@ -122,20 +121,23 @@ object AutomationGate {
         lastNoticeAt = 0L
     }
 
-    /** Cio' che puo' viaggiare in un handoff: comandi gia' autorizzati. */
+    /** What may travel in a handoff: actions that are already authorised. */
     sealed interface TrustedAction {
         data class Command(val command: ScriptCommand) : TrustedAction
         data class ConnectClient(val ip: String) : TrustedAction
+        /** Server start from a tile, widget or shortcut. */
+        object StartServer : TrustedAction
+        /** Stop from a tile, widget or shortcut. */
+        object StopStreaming : TrustedAction
     }
 
     /**
-     * Alcune azioni devono rimbalzare verso la MainActivity: il receiver perche'
-     * la cattura dell'audio interno richiede il consenso MediaProjection, che
-     * solo un'Activity puo' chiedere; tile e widget perche' l'unico ingresso non
-     * esportato e' la trampoline. Rimettere il token nell'Intent lo esporrebbe
-     * ai log di sistema, quindi l'azione gia' autorizzata resta in memoria e
-     * viaggia come nonce monouso: un'app terza non lo puo' indovinare e comunque
-     * scade.
+     * Some actions have to bounce to MainActivity: the receiver because
+     * capturing internal audio needs MediaProjection consent, which only an
+     * Activity can ask for; tiles and widgets because the trampoline is the only
+     * non-exported entry point. Putting the token back into an Intent would
+     * expose it to the system logs, so the already-authorised action stays in
+     * memory and only a single-use nonce travels, which expires on its own.
      */
     fun issueHandoff(action: TrustedAction): String {
         purgeExpiredHandoffs()
@@ -160,8 +162,8 @@ object AutomationGate {
         handoffs.entries.removeAll { it.value.expiresAt < now }
     }
 
-    // Confronto sui digest: tempo costante e nessuna informazione sulla
-    // lunghezza del token atteso.
+    // Compared on the digests: constant time, and nothing observable about the
+    // length of the expected token.
     private fun constantTimeEquals(expected: String, provided: String): Boolean {
         val digest = MessageDigest.getInstance("SHA-256")
         val a = digest.digest(expected.toByteArray(Charsets.UTF_8))
@@ -170,8 +172,8 @@ object AutomationGate {
         return MessageDigest.isEqual(a, b)
     }
 
-    // Senza un avviso il comando rifiutato sparirebbe in silenzio e l'utente non
-    // capirebbe perche' la sua automazione non funziona piu'.
+    // Without a notice a refused command would vanish silently and the user
+    // would have no idea why their automation stopped working.
     private fun notifyBlocked(context: Context, verdict: Verdict) {
         if (verdict == Verdict.THROTTLED) return
         synchronized(lock) {

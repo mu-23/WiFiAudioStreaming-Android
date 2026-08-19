@@ -35,6 +35,8 @@
     <string name="settings_group_audio_sources">Audio Sources</string>
     <string name="settings_item_internal_audio_title">Internal Audio</string>
     <string name="settings_item_internal_audio_desc">Stream audio played by the device</string>
+    <string name="settings_item_mute_render_title">Mute This Device While Streaming</string>
+    <string name="settings_item_mute_render_desc">Silence the media volume here while the audio is captured, so it is not heard twice. Turn it off to keep hearing it on this device too. The volume is restored when the server stops.</string>
     <string name="settings_item_mic_title">Microphone</string>
     <string name="settings_item_mic_desc">Stream audio captured by the microphone</string>
     <string name="settings_group_audio_quality">Audio Quality</string>
@@ -188,6 +190,8 @@
     <string name="settings_group_server_protocols">Server Protocols</string>
     <string name="settings_item_wfas_title">WFAS (Native)</string>
     <string name="settings_item_wfas_desc">Low-latency custom protocol, used by the mobile and desktop apps.</string>
+    <string name="settings_item_persist_title">Keep Server Running After Disconnect</string>
+    <string name="settings_item_persist_desc">In unicast, a client leaving ends the session, not the server: it keeps the port open and waits for the next one. Multicast already works this way.</string>
     <string name="settings_item_rtp_title">RTP/PCM Stream</string>
     <string name="settings_item_rtp_desc">Standard protocol for VLC, Kodi, or FFplay.</string>
     <string name="settings_item_http_title">HTTP Web Stream</string>
@@ -270,6 +274,10 @@
     <string name="auto_connect_priorities_title">Auto-Connect Priorities</string>
     <string name="auto_connect_ip_label">IP Address</string>
     <string name="auto_connect_ssid_label">Wi-Fi Network (Optional)</string>
+    <string name="auto_connect_key_label">Key (optional)</string>
+    <string name="auto_connect_key_saved">Key saved — type to replace</string>
+    <string name="auto_connect_key_clear">Remove saved key</string>
+    <string name="auto_connect_enabled_label">Enabled</string>
     <string name="auto_connect_add_button">Add Server</string>
     <string name="auto_connect_move_up">Move Up</string>
     <string name="auto_connect_move_down">Move Down</string>
@@ -327,7 +335,7 @@
     <string name="scripting_security_title">External commands</string>
     <string name="scripting_security_state_on">Allowed, token required</string>
     <string name="scripting_security_state_off">Blocked</string>
-    <string name="scripting_security_explainer">NFC tags, Tasker, MacroDroid and ADB reach this app through a public entry point, so any installed app could send a command too. External commands stay refused until you turn them on here. Once on, only commands carrying the token below run: the URIs and commands generated on this screen already include it.</string>
+    <string name="scripting_security_explainer">Commands from outside the app (NFC tags, Tasker, MacroDroid, ADB) stay refused until you turn them on here. Once on, only commands carrying the token below run: the URIs and commands generated on this screen already include it. Leave this off if you do not use automations.</string>
     <string name="scripting_security_reveal">Show or hide the token</string>
     <string name="scripting_security_copy_token">Copy token</string>
     <string name="scripting_security_regenerate">Generate a new token</string>
@@ -366,6 +374,9 @@
     <string name="sec_mode_ask">Ask</string>
     <string name="sec_mode_key">Key</string>
     <string name="settings_item_auth_key_title">Key</string>
+    <string name="key_strength_weak">Weak key</string>
+    <string name="key_strength_fair">Fair key</string>
+    <string name="key_strength_strong">Strong key</string>
     <string name="settings_item_auth_key_desc">Both devices must enter the same key. It is never sent over the network.</string>
     <string name="settings_item_encryption_title">Encrypt audio</string>
     <string name="settings_item_encryption_desc">Encrypts the audio end-to-end with ChaCha20-Poly1305. Requires Key mode (a pre-shared key).</string>

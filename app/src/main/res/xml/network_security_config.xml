@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext stays permitted by default because that is what the app does: the
+    WFAS stream, DLNA, Snapcast and the HTTP fallback all talk plain protocols to
+    addresses on the local network, which cannot be enumerated here.
+
+    The hosts we do know are pinned to HTTPS, so the update check and the pairing
+    links cannot be talked down to plain HTTP.
+-->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">marcomorosi.eu</domain>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+    </domain-config>
 </network-security-config>

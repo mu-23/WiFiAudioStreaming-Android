@@ -785,6 +785,7 @@ fun ExpressiveSourceSection(
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+                KeyStrengthMeter(keyText)
             }
         }
 

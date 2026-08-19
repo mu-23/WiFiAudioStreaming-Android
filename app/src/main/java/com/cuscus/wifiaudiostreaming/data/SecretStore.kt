@@ -28,26 +28,27 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.security.KeyStore
 
 /**
- * I segreti dell'app, tenuti fuori dal DataStore.
+ * The app's secrets, deliberately kept out of the DataStore.
  *
- * Il DataStore va benissimo per le impostazioni, ma il suo file finisce
- * nell'Auto Backup e nel trasferimento device-to-device, e un token in chiaro
- * dentro un backup e' un token che ha lasciato il telefono. Qui il valore e'
- * cifrato con una chiave che vive nel Keystore e non esce mai dal TEE: anche se
- * il file venisse copiato altrove sarebbe illeggibile, e questo lega il token al
- * dispositivo che lo ha generato — per un token di automazione e' la proprieta'
- * che vogliamo, non un effetto collaterale.
+ * The DataStore is fine for settings, but its file is included in Auto Backup
+ * and in device-to-device transfer, and a token in cleartext inside a backup is
+ * a token that has left the phone. Here the value is encrypted with a key that
+ * lives in the Keystore and never leaves the TEE, so a copy of the file is
+ * unreadable anywhere else. That ties the token to the device that generated
+ * it, which for an automation token is the property we want rather than a side
+ * effect.
  *
- * Contro root non protegge (root diventa il nostro UID e chiede al Keystore di
- * decifrare): serve contro l'estrazione offline della partizione dati e contro i
- * backup. La regola di esclusione in `data_extraction_rules.xml` copre il resto.
+ * It is no defence against root, which becomes our own UID and can ask the
+ * Keystore to decrypt: the point is offline extraction of the data partition,
+ * and backups. The exclusion rule in `data_extraction_rules.xml` covers the
+ * rest.
  */
 class SecretStore private constructor(private val prefs: SharedPreferences) {
 
     private val _automationToken = MutableStateFlow(prefs.getString(KEY_AUTOMATION_TOKEN, "").orEmpty())
     val automationToken: StateFlow<String> = _automationToken.asStateFlow()
 
-    /** Genera il token al primo accesso e lo riusa sempre dopo. */
+    /** Generates the token on first access and reuses it from then on. */
     @Synchronized
     fun ensureAutomationToken(): String {
         val current = prefs.getString(KEY_AUTOMATION_TOKEN, "").orEmpty()
@@ -66,18 +67,40 @@ class SecretStore private constructor(private val prefs: SharedPreferences) {
         return token
     }
 
+    // Per-entry auto-connect keys. Stored here — encrypted, Keystore-backed, out
+    // of backup — rather than in the settings DataStore, so an unattended
+    // connection to a KEY-mode server has its key without prompting, and the key
+    // is never persisted in cleartext. Keyed by the entry's opaque `keyRef`.
+    @Synchronized
+    fun putAutoConnectKey(ref: String, key: String) {
+        if (ref.isBlank()) return
+        prefs.edit().putString(AUTO_CONNECT_KEY_PREFIX + ref, key).commit()
+    }
+
+    fun getAutoConnectKey(ref: String): String? {
+        if (ref.isBlank()) return null
+        return prefs.getString(AUTO_CONNECT_KEY_PREFIX + ref, null)?.takeIf { it.isNotBlank() }
+    }
+
+    @Synchronized
+    fun clearAutoConnectKey(ref: String) {
+        if (ref.isBlank()) return
+        prefs.edit().remove(AUTO_CONNECT_KEY_PREFIX + ref).commit()
+    }
+
     companion object {
         private const val FILE_NAME = "wfas_secrets"
         private const val MASTER_KEY_ALIAS = "wfas_secrets_master_key"
         private const val KEY_AUTOMATION_TOKEN = "automation_token"
+        private const val AUTO_CONNECT_KEY_PREFIX = "ac_key_"
 
         @Volatile
         private var instance: SecretStore? = null
 
         /**
-         * Costruire il file cifrato tocca il Keystore, quindi va chiamato fuori
-         * dal main thread. L'istanza e' condivisa: MainActivity, receiver e
-         * trampoline vivono nello stesso processo.
+         * Building the encrypted file touches the Keystore, so this must be
+         * called off the main thread. The instance is shared: MainActivity, the
+         * receiver and the trampoline all live in the same process.
          */
         fun get(context: Context): SecretStore {
             instance?.let { return it }
@@ -86,10 +109,10 @@ class SecretStore private constructor(private val prefs: SharedPreferences) {
             }
         }
 
-        // Un backup ripristinato altrove, o un Keystore invalidato dal sistema,
-        // lascia un file che non si apre piu'. Non e' un errore da propagare:
-        // si butta via tutto e si riparte con un token nuovo, che e' esattamente
-        // il comportamento voluto quando i dati arrivano da un altro telefono.
+        // A backup restored elsewhere, or a Keystore invalidated by the system,
+        // leaves a file that no longer opens. That is not an error worth
+        // propagating: throw it all away and start over with a fresh token, which
+        // is exactly what should happen when the data came from another phone.
         private fun openPrefs(context: Context): SharedPreferences =
             runCatching { createPrefs(context) }.getOrElse {
                 wipe(context)

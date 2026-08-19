@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Android 12 e successivi.
+    Android 12 and later.
 
-    Il file dei segreti e' cifrato con una chiave che vive nel Keystore e non
-    esce dal dispositivo: portarselo dietro produrrebbe solo un blob illeggibile,
-    quindi si esclude sia dal backup cloud sia dal trasferimento fra dispositivi.
-    Il token di automazione deve restare legato al telefono che lo ha generato.
+    The secrets file is encrypted with a key that lives in the Keystore and does
+    not leave the device, so carrying it anywhere would only produce an
+    unreadable blob: it is excluded from both cloud backup and device transfer,
+    and the automation token stays tied to the phone that generated it.
+
+    The settings DataStore is excluded for the opposite reason: it holds the
+    pre-shared key in cleartext, and a backup would be a copy of that key
+    somewhere the device no longer controls.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="wfas_secrets.xml" />
+        <exclude domain="file" path="datastore/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="wfas_secrets.xml" />
+        <exclude domain="file" path="datastore/" />
     </device-transfer>
 </data-extraction-rules>

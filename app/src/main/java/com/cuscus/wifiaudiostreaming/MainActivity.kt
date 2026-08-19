@@ -104,6 +104,8 @@ class MainActivity : ComponentActivity() {
     private var pendingServerParams: ResolvedServerParams? = null
     private val pendingCommand = mutableStateOf<ScriptCommand?>(null)
     private val pendingConnectIp = mutableStateOf<String?>(null)
+    private val pendingStartServer = mutableStateOf(false)
+    private val pendingStopStreaming = mutableStateOf(false)
     private val forceDonation = mutableStateOf(false)
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -142,6 +144,8 @@ class MainActivity : ComponentActivity() {
                         putExtra("snapcast_chunk_ms", it.snapcastChunkMs)
                         putExtra("snapcast_buffer_ms", it.snapcastBufferMs)
                         putExtra("snapcast_stream_name", it.snapcastStreamName)
+                        putExtra("mute_render", it.muteRender)
+                        putExtra("server_persist", it.serverPersist)
                     }
                 }
                 startForegroundService(intent)
@@ -375,11 +379,10 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * L'Activity e' esportata e risponde allo schema `wifiaudio://`, quindi
-     * qualsiasi app puo' aprirla con un comando dentro. Nessun comando arriva a
-     * [executeScriptCommand] senza passare da [AutomationGate]; l'unica
-     * eccezione e' il rimbalzo interno dal receiver, che porta un nonce monouso
-     * al posto del token.
+     * This Activity is exported and answers the `wifiaudio://` scheme, so what
+     * arrives here is untrusted. Nothing reaches [executeScriptCommand] without
+     * going through [AutomationGate]; the one exception is the internal bounce
+     * from the receiver, which carries a single-use nonce instead of the token.
      */
     private fun intakeExternalCommand(intent: Intent?) {
         if (intent == null) return
@@ -390,14 +393,16 @@ class MainActivity : ComponentActivity() {
             when (val trusted = AutomationGate.consumeHandoff(handoffId)) {
                 is AutomationGate.TrustedAction.Command -> pendingCommand.value = trusted.command
                 is AutomationGate.TrustedAction.ConnectClient -> pendingConnectIp.value = trusted.ip
+                AutomationGate.TrustedAction.StartServer -> pendingStartServer.value = true
+                AutomationGate.TrustedAction.StopStreaming -> pendingStopStreaming.value = true
                 null -> Unit
             }
             return
         }
 
         val command = ScriptCommand.fromIntent(intent) ?: return
-        // Consumato subito: una rotazione o un ritorno da background non deve
-        // rieseguire il comando ne' ritentare la validazione.
+        // Consumed straight away: a rotation or a return from background must
+        // not run the command again, nor retry the validation.
         intent.data = null
         intent.action = null
         lifecycleScope.launch {
@@ -600,11 +605,10 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        val intentAction = intent.action
-
-        // Non c'e' piu' un ramo CONNECT_CLIENT: collegarsi a un IP arbitrario e'
-        // l'azione piu' pericolosa raggiungibile dall'esterno, e ora arriva solo
-        // da CommandTrampolineActivity con un nonce monouso.
+        // No action is read from `intent.action` any more. This Activity is
+        // exported, so that field is not evidence of anything. Tiles, widgets and
+        // shortcuts come through CommandTrampolineActivity, which is not
+        // exported, and what lands here is a single-use nonce.
         LaunchedEffect(pendingConnectIp.value) {
             pendingConnectIp.value?.let { ip ->
                 pendingConnectIp.value = null
@@ -612,22 +616,23 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        LaunchedEffect(intentAction) {
-            when (intentAction) {
-                "com.cuscus.wifiaudiostreaming.START_SERVER" -> {
-                    startMediaProjectionRequest()
-                    intent.action = null
-                }
-                "com.cuscus.wifiaudiostreaming.STOP_STREAMING" -> {
-                    if (isServer) {
-                        val intentStop = Intent(context, AudioCaptureService::class.java).apply {
-                            action = AudioCaptureService.ACTION_STOP
-                        }
-                        context.startService(intentStop)
-                    } else {
-                        viewModel.stopStreaming()
+        LaunchedEffect(pendingStartServer.value) {
+            if (pendingStartServer.value) {
+                pendingStartServer.value = false
+                startMediaProjectionRequest()
+            }
+        }
+
+        LaunchedEffect(pendingStopStreaming.value) {
+            if (pendingStopStreaming.value) {
+                pendingStopStreaming.value = false
+                if (isServer) {
+                    val intentStop = Intent(context, AudioCaptureService::class.java).apply {
+                        action = AudioCaptureService.ACTION_STOP
                     }
-                    intent.action = null
+                    context.startService(intentStop)
+                } else {
+                    viewModel.stopStreaming()
                 }
             }
         }
@@ -776,6 +781,8 @@ class MainActivity : ComponentActivity() {
             onClientTileIpChange = viewModel::setClientTileIp,
             onAutoConnectEnabledChange = viewModel::setAutoConnectEnabled,
             onSaveAutoConnectList = viewModel::saveAutoConnectList,
+            onMuteRenderChange = viewModel::setMuteRender,
+            onServerPersistChange = viewModel::setServerPersist,
             onConnectionSoundChange = viewModel::setConnectionSoundEnabled,
             onDisconnectionSoundChange = viewModel::setDisconnectionSoundEnabled,
             onHapticsChange = viewModel::setHapticsEnabled,

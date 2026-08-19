@@ -19,6 +19,7 @@ package com.cuscus.wifiaudiostreaming.scripting
 
 import android.content.Intent
 import android.net.Uri
+import com.cuscus.wifiaudiostreaming.NetAddr
 
 enum class ScriptActionType(val id: String) {
     START_SERVER("server"),
@@ -72,17 +73,20 @@ object ScriptParams {
     const val SNAPCASTCODEC = "snapcastcodec"
     const val WFASMODE = "wfasmode"
 
-    // Non e' un parametro di streaming ma la credenziale che autorizza i comandi
-    // che arrivano da fuori dal processo: tenuto fuori da ALL apposta, cosi'
-    // nessun esecutore puo' scambiarlo per un'impostazione e nessuno script
-    // salvato se lo porta dietro.
+    // Not a streaming parameter but the credential that authorises commands from
+    // outside the process. Deliberately kept out of ALL, so no executor can
+    // mistake it for a setting and no saved script carries it along.
     const val TOKEN = "token"
 
+    // Extras arriving on a broadcast are read by name from this list, while a
+    // wifiaudio:// URI carries whatever query keys it has. Anything missing here
+    // is therefore silently accepted one way and silently dropped the other.
     val ALL = listOf(
         INTERNAL, MIC, SAMPLERATE, CHANNELS, BUFFER, PORT, MICPORT, MULTICAST,
         RTP, RTPPORT, HTTP, HTTPPORT, HTTPSAFARI, IFACE, IP, CLIENTMIC, CLIENTIP,
         AUTOCONNECT, CONNSOUND, DISCSOUND, MODE, AUTHMODE, AUTHKEY,
-        USB, USBLATENCY, WFASMODE
+        USB, USBLATENCY, WFASMODE,
+        SNAPCAST, SNAPCASTPORT, SNAPCASTCTRLPORT, SNAPCASTCODEC
     )
 
     fun parseBool(value: String?): Boolean? {
@@ -94,6 +98,31 @@ object ScriptParams {
     }
 
     fun parseInt(value: String?): Int? = value?.trim()?.toIntOrNull()
+
+    // Values that end up on a socket or in an AudioTrack are range-checked at the
+    // door. The token establishes that the command is ours; it says nothing about
+    // the numbers inside being usable, and a port of 0 or a buffer of a gigabyte
+    // is a crash rather than a setting.
+    private val SAMPLE_RATES =
+        setOf(8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 88200, 96000, 176400, 192000)
+
+    /** A port to connect to. */
+    fun parsePort(value: String?): Int? = parseInt(value)?.takeIf { it in 1..65535 }
+
+    /** A port to listen on: below 1024 is not ours to bind. */
+    fun parseBindPort(value: String?): Int? = parseInt(value)?.takeIf { it in 1024..65535 }
+
+    fun parseSampleRate(value: String?): Int? = parseInt(value)?.takeIf { it in SAMPLE_RATES }
+
+    fun parseBuffer(value: String?): Int? = parseInt(value)?.takeIf { it in 64..1_048_576 }
+
+    fun parseLatency(value: String?): Int? = parseInt(value)?.takeIf { it in 0..500 }
+
+    fun parseChannels(value: String?): String? =
+        value?.trim()?.uppercase()?.takeIf { it == "MONO" || it == "STEREO" }
+
+    fun parseAddress(value: String?): String? =
+        value?.trim()?.takeIf { NetAddr.isLiteralAddress(it) }
 }
 
 data class ScriptCommand(
@@ -131,6 +160,16 @@ data class ScriptCommand(
     fun bool(key: String): Boolean? = ScriptParams.parseBool(params[key])
     fun int(key: String): Int? = ScriptParams.parseInt(params[key])
     fun str(key: String): String? = params[key]?.takeIf { it.isNotBlank() }
+
+    // Validating accessors: a value that does not pass reads as absent, so the
+    // stored setting stands rather than a nonsense one taking its place.
+    fun port(key: String): Int? = ScriptParams.parsePort(params[key])
+    fun bindPort(key: String): Int? = ScriptParams.parseBindPort(params[key])
+    fun address(key: String): String? = ScriptParams.parseAddress(params[key])
+    fun sampleRate(): Int? = ScriptParams.parseSampleRate(params[ScriptParams.SAMPLERATE])
+    fun buffer(): Int? = ScriptParams.parseBuffer(params[ScriptParams.BUFFER])
+    fun latency(): Int? = ScriptParams.parseLatency(params[ScriptParams.USBLATENCY])
+    fun channels(): String? = ScriptParams.parseChannels(params[ScriptParams.CHANNELS])
 
     companion object {
         const val SCHEME = "wifiaudio"
@@ -200,5 +239,7 @@ data class ResolvedServerParams(
     val snapcastBufferMs: Int = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.BUFFER_MS,
     val snapcastStreamName: String = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.STREAM_NAME,
     val usbMode: Boolean = false,
-    val usbLatencyMs: Int = 20
+    val usbLatencyMs: Int = 20,
+    val muteRender: Boolean = true,
+    val serverPersist: Boolean = false
 )

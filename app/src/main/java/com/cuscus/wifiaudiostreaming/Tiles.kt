@@ -71,9 +71,10 @@ class ServerTileService : BaseStreamingTileService() {
 
     override fun onClick() {
         val active = isAppStreaming() && isAppServer()
-        val intent = Intent(this, MainActivity::class.java).apply {
-            action = if (active) "com.cuscus.wifiaudiostreaming.STOP_STREAMING" else "com.cuscus.wifiaudiostreaming.START_SERVER"
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val intent = Intent(this, CommandTrampolineActivity::class.java).apply {
+            action = if (active) CommandTrampolineActivity.ACTION_STOP_STREAMING
+            else CommandTrampolineActivity.ACTION_START_SERVER
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startActivitySafely(intent)
     }
@@ -96,9 +97,9 @@ class ClientTileService : BaseStreamingTileService() {
         val active = isAppStreaming() && !isAppServer()
 
         if (active) {
-            val intent = Intent(this, MainActivity::class.java).apply {
-                action = "com.cuscus.wifiaudiostreaming.STOP_STREAMING"
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            val intent = Intent(this, CommandTrampolineActivity::class.java).apply {
+                action = CommandTrampolineActivity.ACTION_STOP_STREAMING
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivitySafely(intent)
         } else {

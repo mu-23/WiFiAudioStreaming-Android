@@ -39,7 +39,7 @@ object ScriptExecutor {
     // la scelta dell'interfaccia sarebbe gia' stata fatta.
     fun applyLinkOverrides(settings: AppSettings, command: ScriptCommand, context: Context) {
         val usb = command.bool(ScriptParams.USB) ?: settings.usbModeEnabled
-        val latency = command.int(ScriptParams.USBLATENCY) ?: settings.usbLatencyMs
+        val latency = command.latency() ?: settings.usbLatencyMs
         UsbLink.configure(context.applicationContext, usb, latency)
         WfasPolicy.configure(resolveWfasMode(command) ?: settings.wfasMode)
     }
@@ -58,12 +58,12 @@ object ScriptExecutor {
         val settings = store.settingsFlow.first()
         val enable = command.bool(ScriptParams.USB) ?: !settings.usbModeEnabled
         store.saveUsbMode(enable)
-        command.int(ScriptParams.USBLATENCY)?.let { store.saveUsbLatency(it) }
+        command.latency()?.let { store.saveUsbLatency(it) }
         resolveWfasMode(command)?.let { store.saveWfasMode(it) }
         UsbLink.configure(
             context.applicationContext,
             enable,
-            command.int(ScriptParams.USBLATENCY) ?: settings.usbLatencyMs
+            command.latency() ?: settings.usbLatencyMs
         )
     }
 
@@ -111,23 +111,23 @@ object ScriptExecutor {
         return ResolvedServerParams(
             streamInternal = command.bool(ScriptParams.INTERNAL) ?: settings.streamInternal,
             streamMic = command.bool(ScriptParams.MIC) ?: settings.streamMic,
-            sampleRate = command.int(ScriptParams.SAMPLERATE) ?: settings.sampleRate,
-            channelConfig = command.str(ScriptParams.CHANNELS)?.uppercase() ?: settings.channelConfig,
-            bufferSize = command.int(ScriptParams.BUFFER) ?: settings.bufferSize,
+            sampleRate = command.sampleRate() ?: settings.sampleRate,
+            channelConfig = command.channels() ?: settings.channelConfig,
+            bufferSize = command.buffer() ?: settings.bufferSize,
             isMulticast = multicast,
-            streamingPort = command.int(ScriptParams.PORT) ?: settings.streamingPort,
+            streamingPort = command.bindPort(ScriptParams.PORT) ?: settings.streamingPort,
             networkInterface = command.str(ScriptParams.IFACE) ?: settings.networkInterface,
             rtpEnabled = rtpEnabled,
-            rtpPort = command.int(ScriptParams.RTPPORT) ?: settings.rtpPort,
+            rtpPort = command.bindPort(ScriptParams.RTPPORT) ?: settings.rtpPort,
             httpEnabled = httpEnabled,
-            httpPort = command.int(ScriptParams.HTTPPORT) ?: settings.httpPort,
+            httpPort = command.bindPort(ScriptParams.HTTPPORT) ?: settings.httpPort,
             dlnaEnabled = settings.dlnaEnabled,
             dlnaPort = settings.dlnaPort,
             dlnaFormat = settings.dlnaFormat,
             dlnaDevices = settings.dlnaDevices,
             snapcastEnabled = snapcastEnabled,
-            snapcastPort = command.int(ScriptParams.SNAPCASTPORT) ?: settings.snapcastPort,
-            snapcastControlPort = command.int(ScriptParams.SNAPCASTCTRLPORT) ?: settings.snapcastControlPort,
+            snapcastPort = command.bindPort(ScriptParams.SNAPCASTPORT) ?: settings.snapcastPort,
+            snapcastControlPort = command.bindPort(ScriptParams.SNAPCASTCTRLPORT) ?: settings.snapcastControlPort,
             snapcastCodec = com.cuscus.wifiaudiostreaming.snapcast.SnapcastCodecs.normalize(
                 command.str(ScriptParams.SNAPCASTCODEC) ?: settings.snapcastCodec
             ),
@@ -135,7 +135,9 @@ object ScriptExecutor {
             snapcastBufferMs = settings.snapcastBufferMs,
             snapcastStreamName = settings.snapcastStreamName,
             usbMode = command.bool(ScriptParams.USB) ?: settings.usbModeEnabled,
-            usbLatencyMs = command.int(ScriptParams.USBLATENCY) ?: settings.usbLatencyMs
+            usbLatencyMs = command.latency() ?: settings.usbLatencyMs,
+            muteRender = settings.muteRender,
+            serverPersist = settings.serverPersist
         )
     }
 
@@ -166,6 +168,8 @@ object ScriptExecutor {
             putExtra("snapcast_chunk_ms", params.snapcastChunkMs)
             putExtra("snapcast_buffer_ms", params.snapcastBufferMs)
             putExtra("snapcast_stream_name", params.snapcastStreamName)
+            putExtra("mute_render", params.muteRender)
+            putExtra("server_persist", params.serverPersist)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -189,11 +193,14 @@ object ScriptExecutor {
         val settings = store.settingsFlow.first()
         applyLinkOverrides(settings, command, context)
         val wantsUsb = command.bool(ScriptParams.USB) == true
-        val ip = command.str(ScriptParams.IP)
-            ?: command.str(ScriptParams.CLIENTIP)
+        // An address that is not an address is not a target: rejecting it here
+        // keeps a malformed value from reaching the socket layer, and keeps a name
+        // that would need resolving off a thread that must not block on DNS.
+        val ip = command.address(ScriptParams.IP)
+            ?: command.address(ScriptParams.CLIENTIP)
             ?: (if (wantsUsb) resolveUsbPeer() else null)
             ?: return
-        val port = command.int(ScriptParams.PORT) ?: settings.streamingPort
+        val port = command.port(ScriptParams.PORT) ?: settings.streamingPort
         val clientMic = command.bool(ScriptParams.CLIENTMIC) ?: settings.sendClientMicrophone
 
         NetworkManager.connectionStatus.value = "Detecting mode for $ip..."
@@ -208,11 +215,11 @@ object ScriptExecutor {
         NetworkManager.startClient(
             context = context.applicationContext,
             serverInfo = serverInfo,
-            sampleRate = command.int(ScriptParams.SAMPLERATE) ?: settings.sampleRate,
-            channelConfig = command.str(ScriptParams.CHANNELS)?.uppercase() ?: settings.channelConfig,
-            bufferSize = command.int(ScriptParams.BUFFER) ?: settings.bufferSize,
+            sampleRate = command.sampleRate() ?: settings.sampleRate,
+            channelConfig = command.channels() ?: settings.channelConfig,
+            bufferSize = command.buffer() ?: settings.bufferSize,
             sendMicrophone = clientMic,
-            micPort = command.int(ScriptParams.MICPORT) ?: settings.micPort,
+            micPort = command.bindPort(ScriptParams.MICPORT) ?: settings.micPort,
             networkInterfaceName = command.str(ScriptParams.IFACE) ?: settings.networkInterface,
             connectionSoundEnabled = command.bool(ScriptParams.CONNSOUND) ?: settings.connectionSoundEnabled,
             disconnectionSoundEnabled = command.bool(ScriptParams.DISCSOUND) ?: settings.disconnectionSoundEnabled,
@@ -233,38 +240,38 @@ object ScriptExecutor {
             store.saveAudioSourceSettings(internal ?: s.streamInternal, mic ?: s.streamMic)
         }
 
-        val sampleRate = command.int(ScriptParams.SAMPLERATE)
-        val channels = command.str(ScriptParams.CHANNELS)?.uppercase()
+        val sampleRate = command.sampleRate()
+        val channels = command.channels()
         if (sampleRate != null || channels != null) {
             store.saveAudioQualitySettings(sampleRate ?: s.sampleRate, channels ?: s.channelConfig)
         }
 
-        command.int(ScriptParams.BUFFER)?.let { store.saveBufferSize(it) }
-        command.int(ScriptParams.PORT)?.let { if (it in 1024..65535) store.saveStreamingPort(it) }
-        command.int(ScriptParams.MICPORT)?.let { if (it in 1024..65535) store.saveMicPort(it) }
+        command.buffer()?.let { store.saveBufferSize(it) }
+        command.bindPort(ScriptParams.PORT)?.let { store.saveStreamingPort(it) }
+        command.bindPort(ScriptParams.MICPORT)?.let { store.saveMicPort(it) }
         command.bool(ScriptParams.MULTICAST)?.let { store.saveLastMulticastMode(it) }
 
         val rtp = command.bool(ScriptParams.RTP)
-        val rtpPort = command.int(ScriptParams.RTPPORT)
+        val rtpPort = command.bindPort(ScriptParams.RTPPORT)
         val http = command.bool(ScriptParams.HTTP)
         if (rtp != null || rtpPort != null || http != null) {
             store.saveServerProtocols(rtp ?: s.rtpEnabled, rtpPort ?: s.rtpPort, http ?: s.httpEnabled)
         }
 
-        val httpPort = command.int(ScriptParams.HTTPPORT)
+        val httpPort = command.bindPort(ScriptParams.HTTPPORT)
         val httpSafari = command.bool(ScriptParams.HTTPSAFARI)
         if (httpPort != null || httpSafari != null) {
             store.saveHttpSettings(httpPort ?: s.httpPort, httpSafari ?: s.httpSafariMode)
         }
 
         command.str(ScriptParams.IFACE)?.let { store.saveNetworkInterface(it) }
-        command.str(ScriptParams.CLIENTIP)?.let { store.saveClientTileIp(it) }
+        command.address(ScriptParams.CLIENTIP)?.let { store.saveClientTileIp(it) }
         command.bool(ScriptParams.AUTOCONNECT)?.let { store.setAutoConnectEnabled(it) }
         command.bool(ScriptParams.CONNSOUND)?.let { store.saveConnectionSoundEnabled(it) }
         command.bool(ScriptParams.DISCSOUND)?.let { store.saveDisconnectionSoundEnabled(it) }
 
         command.bool(ScriptParams.USB)?.let { store.saveUsbMode(it) }
-        command.int(ScriptParams.USBLATENCY)?.let { store.saveUsbLatency(it) }
+        command.latency()?.let { store.saveUsbLatency(it) }
         resolveWfasMode(command)?.let { store.saveWfasMode(it) }
 
         persistSecurityIfPresent(store, s, command)

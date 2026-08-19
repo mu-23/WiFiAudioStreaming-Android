@@ -25,6 +25,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.cuscus.wifiaudiostreaming.data.AutoConnectEntry
+import com.cuscus.wifiaudiostreaming.data.SecretStore
 import com.cuscus.wifiaudiostreaming.data.SettingsDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +121,7 @@ class AutoConnectService : Service() {
                 }
 
                 var targetServer: ServerInfo? = null
+                var matchedEntry: AutoConnectEntry? = null
                 val multicastLock = wifiManager.createMulticastLock("auto_connect_multicast_lock")
                 multicastLock.setReferenceCounted(false)
 
@@ -165,26 +167,27 @@ class AutoConnectService : Service() {
                                 val parts = message.split(";")
                                 if (parts.size >= 4) {
                                     val isMulticast = parts[2].equals("MULTICAST", ignoreCase = true)
-                                    val port = parts[3].toIntOrNull() ?: continue
+                                    val beaconPort = parts[3].toIntOrNull() ?: continue
 
                                     val currentSsid = NetworkManager.getCurrentSsid(applicationContext).trim().removePrefix("\"").removeSuffix("\"")
                                     val priorityList = AutoConnectEntry.parseList(prefs.autoConnectList)
-                                    val validEntries = priorityList.filter { it.ip.isNotBlank() }
+                                    // Disabled entries are skipped, exactly as on the desktop.
+                                    val validEntries = priorityList.filter { it.ip.isNotBlank() && it.enabled }
 
-                                    val isMatch = if (validEntries.isEmpty()) {
-                                        true
-                                    } else {
-                                        validEntries.any { entry ->
-                                            val cleanIp = entry.ip.trim()
-                                            val cleanSsid = entry.ssid.trim().removePrefix("\"").removeSuffix("\"")
-                                            val isSsidUnknown = currentSsid == "<unknown ssid>" || currentSsid.isEmpty()
-                                            val matchesSsid = cleanSsid.isEmpty() || isSsidUnknown || cleanSsid == currentSsid
-
-                                            matchesSsid && cleanIp == remoteIp
-                                        }
+                                    val matched = validEntries.firstOrNull { entry ->
+                                        val cleanIp = entry.ip.trim()
+                                        val cleanSsid = entry.ssid.trim().removePrefix("\"").removeSuffix("\"")
+                                        val isSsidUnknown = currentSsid == "<unknown ssid>" || currentSsid.isEmpty()
+                                        val matchesSsid = cleanSsid.isEmpty() || isSsidUnknown || cleanSsid == currentSsid
+                                        matchesSsid && cleanIp == remoteIp
                                     }
-
-                                    if (isMatch) {
+                                    // Only a configured, enabled entry is a target. An empty
+                                    // list connects to nothing, matching the desktop, which
+                                    // returns early when its target list is empty: an
+                                    // unconfigured auto-connect must not latch onto whatever
+                                    // server happens to be broadcasting on the network.
+                                    if (matched != null) {
+                                        val port = matched?.port ?: beaconPort
                                         Log.d("AutoConnect", "MATCH POSITIVO. Preparo la connessione a $remoteIp:$port")
                                         val micTok = parts.firstOrNull { it.startsWith("mic=") }
                                             ?.removePrefix("mic=")
@@ -195,6 +198,7 @@ class AutoConnectService : Service() {
                                             fromBeacon = true,
                                             audioFormat = StreamAudioFormat.fromBeaconParts(parts)
                                         )
+                                        matchedEntry = matched
                                         break
                                     }
                                 }
@@ -223,6 +227,15 @@ class AutoConnectService : Service() {
                 if (targetServer != null) {
                     isConnecting = true
                     NetworkManager.isServerStreaming = false
+
+                    // The per-entry key, resolved from the Keystore-backed store at
+                    // the moment of use, pre-seeds the client so a KEY-mode server
+                    // authenticates without a prompt. No key ref -> empty, and the
+                    // server may well be OFF/ASK. Not an invite, so clear that flag.
+                    val resolvedKey = matchedEntry?.keyRef
+                        ?.let { SecretStore.get(applicationContext).getAutoConnectKey(it) }
+                    NetworkManager.clientPresharedKey = resolvedKey.orEmpty()
+                    NetworkManager.clientKeyFromInvite = false
 
                     try {
                         Log.d("AutoConnect", "Avvio Service per Client a ${targetServer.ip}")

@@ -634,6 +634,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { settingsDataStore.saveAutoConnectList(list) }
     }
 
+    fun setMuteRender(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.saveMuteRender(enabled) }
+    }
+
+    fun setServerPersist(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.saveServerPersist(enabled) }
+    }
+
     fun setConnectionSoundEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsDataStore.saveConnectionSoundEnabled(enabled) }
     }

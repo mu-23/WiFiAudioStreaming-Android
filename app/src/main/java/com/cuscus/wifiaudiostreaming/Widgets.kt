@@ -274,9 +274,9 @@ class ServerWidget : GlanceAppWidget() {
                         text = if (active) context.getString(R.string.widget_stop_transmission)
                         else context.getString(R.string.widget_start_transmission),
                         onClick = actionStartActivity(
-                            Intent(context, MainActivity::class.java).apply {
-                                action = if (active) "com.cuscus.wifiaudiostreaming.STOP_STREAMING"
-                                else "com.cuscus.wifiaudiostreaming.START_SERVER"
+                            Intent(context, CommandTrampolineActivity::class.java).apply {
+                                action = if (active) CommandTrampolineActivity.ACTION_STOP_STREAMING
+                                else CommandTrampolineActivity.ACTION_START_SERVER
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
                             }
                         ),
@@ -449,8 +449,8 @@ private fun ConnectedBody(context: Context, bmpVolume: Bitmap) {
         Button(
             text = context.getString(R.string.widget_disconnect),
             onClick = actionStartActivity(
-                Intent(context, MainActivity::class.java).apply {
-                    action = "com.cuscus.wifiaudiostreaming.STOP_STREAMING"
+                Intent(context, CommandTrampolineActivity::class.java).apply {
+                    action = CommandTrampolineActivity.ACTION_STOP_STREAMING
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
             ),

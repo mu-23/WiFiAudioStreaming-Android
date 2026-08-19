@@ -91,6 +91,8 @@ class AudioCaptureService : Service() {
                     streamName = intent.getStringExtra("snapcast_stream_name")
                         ?: com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.STREAM_NAME
                 )
+                val muteRender = intent.getBooleanExtra("mute_render", true)
+                val serverPersist = intent.getBooleanExtra("server_persist", false)
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
                 val data = intent.getParcelableExtra<Intent>(EXTRA_DATA)
 
@@ -124,6 +126,8 @@ class AudioCaptureService : Service() {
                         httpPort = httpPort,
                         dlnaConfig = dlnaConfig,
                         snapcastConfig = snapcastConfig,
+                        muteRender = muteRender,
+                        persist = serverPersist,
                         onClientDisconnected = { stopCapture() }
                     )
                 }
@@ -152,7 +156,7 @@ class AudioCaptureService : Service() {
     @SuppressLint("WakelockTimeout")
     private fun acquireLocks() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WiFiAudioStreamer::ServerWakeLock").apply {
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WiFiAudioStreaming::ServerWakeLock").apply {
             acquire()
         }
 
@@ -162,7 +166,7 @@ class AudioCaptureService : Service() {
         } else {
             WifiManager.WIFI_MODE_FULL_HIGH_PERF
         }
-        wifiLock = wifiManager.createWifiLock(lockType, "WiFiAudioStreamer::ServerWifiLock").apply {
+        wifiLock = wifiManager.createWifiLock(lockType, "WiFiAudioStreaming::ServerWifiLock").apply {
             acquire()
         }
     }
@@ -245,9 +249,9 @@ class AudioCaptureService : Service() {
         )
 
     companion object {
-        const val ACTION_START = "com.cuscus.wifiaudiostreamer.ACTION_START"
-        const val ACTION_STOP = "com.cuscus.wifiaudiostreamer.ACTION_STOP"
-        const val ACTION_YIELD = "com.cuscus.wifiaudiostreamer.ACTION_YIELD"
+        const val ACTION_START = "com.cuscus.wifiaudiostreaming.ACTION_START"
+        const val ACTION_STOP = "com.cuscus.wifiaudiostreaming.ACTION_STOP"
+        const val ACTION_YIELD = "com.cuscus.wifiaudiostreaming.ACTION_YIELD"
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "data"
         const val EXTRA_STREAM_INTERNAL = "stream_internal"

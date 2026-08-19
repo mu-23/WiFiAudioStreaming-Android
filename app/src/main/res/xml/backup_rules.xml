@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Android 11 e precedenti. Stessa regola di data_extraction_rules.xml: il file
-    dei segreti non esce dal dispositivo, perche' la chiave che lo apre non esce
-    dal Keystore.
+    Android 11 and earlier. Same rule as data_extraction_rules.xml.
+
+    Two things stay on the device. The encrypted secrets file, because the key
+    that opens it never leaves the Keystore and a copy elsewhere would be an
+    unreadable blob anyway. And the settings DataStore, because it holds the
+    pre-shared key in cleartext: a backup is a copy of that key somewhere the
+    device no longer controls.
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="wfas_secrets.xml" />
+    <exclude domain="file" path="datastore/" />
 </full-backup-content>

@@ -188,6 +188,10 @@ object NetworkManager {
     private val dlnaLifecycleMutex = kotlinx.coroutines.sync.Mutex()
     private const val DLNA_STOP_TIMEOUT_MS = 4000L
     private const val MULTICAST_SILENCE_TIMEOUT_MS = 6000L
+    // How long an issued auth challenge stays answerable. Long enough for a round
+    // trip on a bad link, short enough that an unanswered one does not linger as
+    // something to answer later.
+    private const val CHALLENGE_TTL_MS = 15_000L
 
     val dlnaTargets: kotlinx.coroutines.flow.StateFlow<List<DlnaTargetState>>
         get() = DlnaStatus.targets
@@ -918,7 +922,7 @@ object NetworkManager {
         if (isListeningActive()) return
         discoveredDevices.value = emptyMap()
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val multicastLock = wifiManager.createMulticastLock("wifi_audio_streamer_discovery_lock")
+        val multicastLock = wifiManager.createMulticastLock("wifi_audio_streaming_discovery_lock")
         multicastLock.setReferenceCounted(true)
 
         // Un server che sparisce senza dire BYE (app chiusa, WiFi staccato, crash)
@@ -1294,6 +1298,8 @@ object NetworkManager {
         httpPort: Int = 8080,
         dlnaConfig: DlnaServerConfig? = null,
         snapcastConfig: com.cuscus.wifiaudiostreaming.snapcast.SnapcastServerConfig? = null,
+        muteRender: Boolean = true,
+        persist: Boolean = false,
         onClientDisconnected: (() -> Unit)? = null
     ) {
         if (streamingJob?.isActive == true) return
@@ -1307,10 +1313,15 @@ object NetworkManager {
         )
         startBroadcastingPresence(context, isMulticast, streamingPort, networkInterfaceName, rtpEnabled, serverFormat)
 
+        // Il volume salvato serve solo se lo abbassiamo davvero: con muteRender
+        // spento il ripristino nel finally non deve toccare nulla, altrimenti
+        // riscriverebbe un volume che l'utente puo' aver cambiato nel frattempo.
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        originalMediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        if (streamInternal) {
+        if (streamInternal && muteRender) {
+            originalMediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+        } else {
+            originalMediaVolume = null
         }
 
         val generation = openStreamGeneration()
@@ -1763,6 +1774,20 @@ object NetworkManager {
 
                     val sec = SettingsDataStore(context).settingsFlow.first()
                     configureSecurity(sec.securityMode, sec.authKey, sec.encryptionEnabled)
+                    // A challenge belongs to the peer it was issued to, and expires on
+                    // its own. A single shared slot meant the newest HELLO on the socket
+                    // overwrote whatever the previous caller was still answering - and the
+                    // session keys were then derived from whichever pair of nonces
+                    // happened to be left in it.
+                    class PendingChallenge(val cnonce: String, val snonce: String, val at: Long)
+                    val challenges = HashMap<String, PendingChallenge>()
+                    fun challengeFor(peer: String): PendingChallenge? {
+                        val now = System.currentTimeMillis()
+                        challenges.entries.removeAll { now - it.value.at > CHALLENGE_TTL_MS }
+                        return challenges[peer]
+                    }
+                    // The nonces of the session that authenticated, kept for the key
+                    // derivation below. Only ever written after a proof verified.
                     var pendCnonce = ""
                     var pendSnonce = ""
                     while (isActive) {
@@ -1789,6 +1814,11 @@ object NetworkManager {
                         }
 
                         val peerHost = peerHostOf(clientAddress)
+                        // Challenges are filed under the peer. When the address does not
+                        // resolve to a literal host we still want a stable key, so the raw
+                        // socket address stands in rather than one shared bucket that every
+                        // unresolved peer would land in.
+                        val challengeKey = peerHost ?: clientAddress.toString()
                         Log.d(TAG, "[SERVER][TIMING] messaggio da $peerHost, parse+policy a +${System.currentTimeMillis() - rxAt}ms")
                         if (!WfasPolicy.enabledForPeer(peerHost)) {
                             Log.w(TAG, "[SERVER][UNICAST] WFAS non attivo per peer=$peerHost " +
@@ -1810,18 +1840,32 @@ object NetworkManager {
                                 val cproof = WfasAuth.getToken(message, "cproof")
                                 val cnonce = WfasAuth.getToken(message, "cnonce") ?: ""
                                 if (cproof == null) {
-                                    pendCnonce = cnonce
-                                    pendSnonce = WfasAuth.nonceHex()
-                                    val sproof = WfasAuth.proof(authKey, 'S', pendCnonce, pendSnonce)
-                                    sendSocket.send(Datagram(buildPacket { writeText("${NetworkSettings.AUTH_REQUIRED_PREFIX};snonce=$pendSnonce;sproof=$sproof") }, clientAddress))
+                                    val snonce = WfasAuth.nonceHex()
+                                    challenges[challengeKey] = PendingChallenge(cnonce, snonce, System.currentTimeMillis())
+                                    val sproof = WfasAuth.proof(authKey, 'S', cnonce, snonce)
+                                    sendSocket.send(Datagram(buildPacket { writeText("${NetworkSettings.AUTH_REQUIRED_PREFIX};snonce=$snonce;sproof=$sproof") }, clientAddress))
                                     continue
                                 }
-                                val expected = WfasAuth.proof(authKey, 'C', pendCnonce.ifEmpty { cnonce }, pendSnonce)
+                                // A proof is only an answer to a challenge we issued to this
+                                // peer and have not seen answered yet. Without one there is
+                                // nothing to check it against, and falling back to nonces the
+                                // caller supplied would check it against its own input.
+                                val pending = challengeFor(challengeKey)
+                                if (pending == null) {
+                                    Log.w(TAG, "[SERVER][UNICAST] proof with no pending challenge from $clientAddress")
+                                    sendSocket.send(Datagram(buildPacket { writeText(NetworkSettings.UNAUTHORIZED_MESSAGE) }, clientAddress))
+                                    continue
+                                }
+                                val expected = WfasAuth.proof(authKey, 'C', pending.cnonce, pending.snonce)
                                 if (!WfasAuth.constantTimeEquals(cproof, expected)) {
                                     Log.w(TAG, "[SERVER][UNICAST] auth failed for $clientAddress")
                                     sendSocket.send(Datagram(buildPacket { writeText(NetworkSettings.UNAUTHORIZED_MESSAGE) }, clientAddress))
                                     continue
                                 }
+                                // Single use: a replayed proof finds nothing waiting.
+                                challenges.remove(challengeKey)
+                                pendCnonce = pending.cnonce
+                                pendSnonce = pending.snonce
                                 Log.d(TAG, "[SERVER][UNICAST] auth OK for $clientAddress")
                             }
                             SecurityMode.ASK -> {
@@ -1966,9 +2010,21 @@ object NetworkManager {
                             }
                         }
                         if (clientDisconnectedUnexpectedly) {
-                            isStreamingCurrent.value = false
-                            scope.launch(Dispatchers.Main) { onClientDisconnected?.invoke() }
-                            break
+                            if (persist) {
+                                // Persist: e' finita la sessione, non il server. Azzero lo
+                                // stato del peer appena uscito e torno in cima al while, che
+                                // ricomincia ad annunciarsi e aspetta il prossimo client
+                                // sullo stesso socket.
+                                pendCnonce = ""
+                                pendSnonce = ""
+                                challenges.clear()
+                                activePeerIp = null
+                                Log.d(TAG, "[SERVER][UNICAST] persist: sessione finita, aspetto il prossimo client")
+                            } else {
+                                isStreamingCurrent.value = false
+                                scope.launch(Dispatchers.Main) { onClientDisconnected?.invoke() }
+                                break
+                            }
                         }
                     }
                 }
@@ -2534,7 +2590,7 @@ object NetworkManager {
                     var audioTrack: AudioTrack? = null
                     var multicastSocket: MulticastSocket? = null
                     val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                    val multicastLock = wifiManager.createMulticastLock("wifi_audio_streamer_multicast_lock")
+                    val multicastLock = wifiManager.createMulticastLock("wifi_audio_streaming_multicast_lock")
                     try {
                         multicastLock.acquire()
                         connectionStatus.value = context.getString(R.string.status_joining_multicast)
@@ -2620,6 +2676,15 @@ object NetworkManager {
                         var mcKeyAsked = false
                         val mcExpectedEpoch = expectedMcastEpoch
                         val mcFromInvite = clientKeyFromInvite
+                        // Whether the group is encrypted is settled here, from our
+                        // own configuration (key set, invite, expected epoch) or
+                        // from a beacon whose MAC verified - neither of which can be
+                        // forged. Once settled, audio without FLAG_ENCRYPTED is not
+                        // from the server and is dropped: the flag rides in the
+                        // cleartext header, so it is never evidence on its own, and
+                        // the sender does not get a per-packet vote on whether the
+                        // AEAD applies.
+                        var mcEncRequired = mcKey.isNotEmpty() || mcFromInvite || mcExpectedEpoch != null
                         var mcLastEpoch = when {
                             mcExpectedEpoch != null -> mcExpectedEpoch - 1
                             mcFromInvite -> 0L
@@ -2668,6 +2733,7 @@ object NetworkManager {
                                         mcKeyAsked = true
                                         mcKey = requestKeyFromUi(false) ?: ""
                                         if (mcKey.isBlank()) connectionStatus.value = context.getString(R.string.status_key_required)
+                                        else mcEncRequired = true
                                     }
                                     if (mcKey.isNotEmpty()) {
                                         val info = WfasCrypto.parseMcastBeacon(mcKey, String(src, 0, plen, Charsets.US_ASCII), -1L)
@@ -2705,6 +2771,7 @@ object NetworkManager {
                                         if (info != null && (info.epoch > mcLastEpoch || (mcDir == null && info.epoch == mcLastEpoch))) {
                                             mcDir = WfasCrypto.deriveMulticast(mcKey, info.salt)
                                             sessionEncryptedLive.value = true
+                                            mcEncRequired = true
                                             mcWin = WfasCrypto.ReplayWindow()
                                             if (info.epoch > mcLastEpoch) {
                                                 mcLastEpoch = info.epoch
@@ -2734,6 +2801,12 @@ object NetworkManager {
                                     stopLoop = true
                                     return
                                 }
+                                // Only WFAS packets are queued. Our sender always
+                                // writes the header, encrypted or not, so a datagram
+                                // without the magic is foreign traffic and never
+                                // something to play: the desktop and the C reference
+                                // (WFAS_PKT_OTHER) have always dropped it.
+                                if (plen < MC_HEADER_SIZE || src[0] != MC_MAGIC_0 || src[1] != MC_MAGIC_1) return
                                 audioPackets.add(src.copyOf(plen))
                             }
 
@@ -2824,7 +2897,7 @@ object NetworkManager {
                                                     .feedFrame(r.pcm, 0, r.pcm.size, if (channelConfig == "STEREO") 2 else 1, sampleRate)
                                             }
                                         }
-                                    } else {
+                                    } else if (!mcEncRequired) {
                                         val pcmLen = len - MC_HEADER_SIZE
                                         if (pcmLen > 0) {
                                             if (mcPlayout.shouldDrop(pcmLen)) return
@@ -2842,15 +2915,9 @@ object NetworkManager {
                                                 .feedFrame(outPcm, 0, pcmLen, if (channelConfig == "STEREO") 2 else 1, sampleRate)
                                         }
                                     }
-                                } else {
-                                    if (mcPlayout.shouldDrop(len)) return
-                                    denoiseInPlace(audio, 0, len)
-                                    audioTrack.write(audio, 0, len, AudioTrack.WRITE_BLOCKING)
-                                    mcPlayout.noteWritten(len)
-                                    // Feed ambient spectrum visualizer (multicast raw)
-                                    com.cuscus.wifiaudiostreaming.dsp.AmbientSpectrumAnalyzer
-                                        .feedFrame(audio, 0, len, if (channelConfig == "STEREO") 2 else 1, sampleRate)
                                 }
+                                // No branch for datagrams without the magic:
+                                // classify does not even queue them.
                             }
 
                             classify(packet.data, packet.length)
@@ -3145,7 +3212,7 @@ object NetworkManager {
                                 <head>
                                     <meta charset="UTF-8">
                                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                                    <title>WiFi Audio Streamer</title>
+                                    <title>WiFi Audio Streaming</title>
                                     <style>
                                         :root { --bg: #0f0f0f; --surface: #1e1e1e; --primary: #BB86FC; --text: #e0e0e0; --text-mut: #888; }
                                         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }

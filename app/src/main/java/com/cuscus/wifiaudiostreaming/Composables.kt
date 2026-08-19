@@ -499,6 +499,8 @@ fun ExpressiveSettingsScreen(
     onClientTileIpChange: (String) -> Unit,
     onAutoConnectEnabledChange: (Boolean) -> Unit,
     onSaveAutoConnectList: (List<AutoConnectEntry>) -> Unit,
+    onMuteRenderChange: (Boolean) -> Unit = {},
+    onServerPersistChange: (Boolean) -> Unit = {},
     onConnectionSoundChange: (Boolean) -> Unit,
     onDisconnectionSoundChange: (Boolean) -> Unit,
     onHapticsChange: (Boolean) -> Unit = {},
@@ -547,6 +549,8 @@ fun ExpressiveSettingsScreen(
             onClientTileIpChange = onClientTileIpChange,
             onSaveAutoConnectList = onSaveAutoConnectList,
             onAutoConnectEnabledChange = onAutoConnectEnabledChange,
+            onMuteRenderChange = onMuteRenderChange,
+            onServerPersistChange = onServerPersistChange,
             onConnectionSoundChange = onConnectionSoundChange,
             onDisconnectionSoundChange = onDisconnectionSoundChange,
             onHapticsChange = onHapticsChange,
@@ -589,6 +593,8 @@ fun SettingsScreenContent(
     onClientTileIpChange: (String) -> Unit,
     onAutoConnectEnabledChange: (Boolean) -> Unit,
     onSaveAutoConnectList: (List<AutoConnectEntry>) -> Unit,
+    onMuteRenderChange: (Boolean) -> Unit = {},
+    onServerPersistChange: (Boolean) -> Unit = {},
     onConnectionSoundChange: (Boolean) -> Unit,
     onDisconnectionSoundChange: (Boolean) -> Unit,
     onHapticsChange: (Boolean) -> Unit = {},
@@ -731,6 +737,15 @@ fun SettingsScreenContent(
                         isChecked = appSettings.streamInternal,
                         onCheckedChange = onStreamInternalChange
                     )
+                    AnimatedVisibility(visible = appSettings.streamInternal) {
+                        SettingsSwitchItem(
+                            title = stringResource(R.string.settings_item_mute_render_title),
+                            description = stringResource(R.string.settings_item_mute_render_desc),
+                            icon = Icons.Outlined.VolumeOff,
+                            isChecked = appSettings.muteRender,
+                            onCheckedChange = onMuteRenderChange
+                        )
+                    }
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_mic_title),
                         description = stringResource(R.string.settings_item_mic_desc),
@@ -927,6 +942,13 @@ fun SettingsScreenContent(
                             icon = Icons.Outlined.WarningAmber
                         )
                     }
+                    SettingsSwitchItem(
+                        title = stringResource(R.string.settings_item_persist_title),
+                        description = stringResource(R.string.settings_item_persist_desc),
+                        icon = Icons.Outlined.AllInclusive,
+                        isChecked = appSettings.serverPersist,
+                        onCheckedChange = onServerPersistChange
+                    )
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_rtp_title),
                         description = stringResource(R.string.settings_item_rtp_desc),
@@ -2328,6 +2350,7 @@ fun ExpressiveAudioSourceSelector(
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
+                KeyStrengthMeter(keyText)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -4276,6 +4299,7 @@ fun AutoConnectPriorityListManager(
     var localList by remember(autoConnectListString) { mutableStateOf(AutoConnectEntry.parseList(autoConnectListString)) }
     val context = LocalContext.current
     val acHaptics = rememberAppHaptics()
+    val acScope = rememberCoroutineScope()
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(
@@ -4288,6 +4312,10 @@ fun AutoConnectPriorityListManager(
         localList.forEachIndexed { index, entry ->
             var localIp by remember(index) { mutableStateOf(entry.ip) }
             var localSsid by remember(index) { mutableStateOf(entry.ssid) }
+            // Never pre-filled from storage: the plaintext key is not read back for
+            // display, only written. An empty field with a saved key shows the
+            // "saved" label instead.
+            var localKey by remember(index) { mutableStateOf("") }
             val focusManager = LocalFocusManager.current
 
             ElevatedCard(
@@ -4303,8 +4331,14 @@ fun AutoConnectPriorityListManager(
                         OutlinedTextField(
                             value = localIp,
                             onValueChange = {
+                                // Persist on every change (the field keeps showing the
+                                // local text, so the caret is not reset). Saving only on
+                                // the keyboard's Done left an entry that was typed but
+                                // never stored, so auto-connect had nothing to match.
                                 localIp = it
-                                localList = localList.toMutableList().also { l -> l[index] = entry.copy(ip = it, ssid = localSsid) }
+                                val updated = localList.toMutableList().also { l -> l[index] = entry.copy(ip = it, ssid = localSsid) }
+                                localList = updated
+                                onListChange(updated)
                             },
                             label = { Text(stringResource(R.string.auto_connect_ip_label)) },
                             singleLine = true,
@@ -4321,7 +4355,9 @@ fun AutoConnectPriorityListManager(
                             value = localSsid,
                             onValueChange = {
                                 localSsid = it
-                                localList = localList.toMutableList().also { l -> l[index] = entry.copy(ip = localIp, ssid = it) }
+                                val updated = localList.toMutableList().also { l -> l[index] = entry.copy(ip = localIp, ssid = it) }
+                                localList = updated
+                                onListChange(updated)
                             },
                             label = { Text(stringResource(R.string.auto_connect_ssid_label)) },
                             singleLine = true,
@@ -4349,6 +4385,81 @@ fun AutoConnectPriorityListManager(
                                 }
                             }
                         )
+                        OutlinedTextField(
+                            value = localKey,
+                            onValueChange = { localKey = it },
+                            label = {
+                                Text(
+                                    stringResource(
+                                        if (entry.hasKey) R.string.auto_connect_key_saved
+                                        else R.string.auto_connect_key_label
+                                    )
+                                )
+                            },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = {
+                                val typed = localKey
+                                if (typed.isNotBlank()) {
+                                    acHaptics.confirm()
+                                    val ref = entry.keyRef.ifBlank { AutoConnectEntry.newKeyRef() }
+                                    acScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        com.cuscus.wifiaudiostreaming.data.SecretStore.get(context).putAutoConnectKey(ref, typed)
+                                    }
+                                    localList = localList.toMutableList().also { l ->
+                                        l[index] = entry.copy(ip = localIp, ssid = localSsid, keyRef = ref)
+                                    }
+                                    onListChange(localList)
+                                    localKey = ""   // never keep the plaintext in the field
+                                    focusManager.clearFocus()
+                                }
+                            }),
+                            shape = RoundedCornerShape(16.dp),
+                            leadingIcon = { Icon(Icons.Outlined.VpnKey, contentDescription = null) },
+                            trailingIcon = {
+                                if (entry.hasKey) {
+                                    IconButton(onClick = {
+                                        acHaptics.reject()
+                                        val ref = entry.keyRef
+                                        acScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                            com.cuscus.wifiaudiostreaming.data.SecretStore.get(context).clearAutoConnectKey(ref)
+                                        }
+                                        localList = localList.toMutableList().also { l ->
+                                            l[index] = entry.copy(ip = localIp, ssid = localSsid, keyRef = "")
+                                        }
+                                        onListChange(localList)
+                                        localKey = ""
+                                    }) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = stringResource(R.string.auto_connect_key_clear),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.auto_connect_enabled_label),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = entry.enabled,
+                                onCheckedChange = { on ->
+                                    acHaptics.tick()
+                                    localList = localList.toMutableList().also { l ->
+                                        l[index] = entry.copy(ip = localIp, ssid = localSsid, enabled = on)
+                                    }
+                                    onListChange(localList)
+                                }
+                            )
+                        }
                     }
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(start = 8.dp)) {
@@ -4387,6 +4498,14 @@ fun AutoConnectPriorityListManager(
                         IconButton(
                             onClick = {
                                 acHaptics.reject()
+                                // Removing the entry removes its stored key too, so a
+                                // deleted server leaves no secret behind.
+                                if (entry.hasKey) {
+                                    val ref = entry.keyRef
+                                    acScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        com.cuscus.wifiaudiostreaming.data.SecretStore.get(context).clearAutoConnectKey(ref)
+                                    }
+                                }
                                 val newList = localList.toMutableList()
                                 newList.removeAt(index)
                                 localList = newList
@@ -6324,5 +6443,52 @@ fun BlackoutOverlay(outlinedUi: Boolean = false) {
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+/**
+ * Live strength readout for a hand-typed pre-shared key: a red → amber → green
+ * bar shown under the key field. Advisory, not a gate — see [KeyStrength] for why
+ * a hard minimum was not the answer. Renders nothing until something is typed, and
+ * is not used on the connect dialog, where the user enters a key someone else chose.
+ */
+@Composable
+fun KeyStrengthMeter(key: String, modifier: Modifier = Modifier) {
+    val level = KeyStrength.level(key)
+    if (level == KeyStrengthLevel.EMPTY) return
+    val barColor: Color
+    val labelRes: Int
+    when (level) {
+        KeyStrengthLevel.WEAK -> { barColor = Color(0xFFE5484D); labelRes = R.string.key_strength_weak }
+        KeyStrengthLevel.FAIR -> { barColor = Color(0xFFE9A23B); labelRes = R.string.key_strength_fair }
+        else -> { barColor = Color(0xFF30A46C); labelRes = R.string.key_strength_strong }
+    }
+    val fraction = KeyStrength.fraction(key)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, start = 4.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(barColor)
+            )
+        }
+        Text(
+            text = stringResource(labelRes),
+            color = barColor,
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }

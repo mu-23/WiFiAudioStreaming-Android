@@ -96,6 +96,8 @@
     <string name="settings_group_audio_sources">Sorgenti Audio</string>
     <string name="settings_item_internal_audio_title">Audio Interno</string>
     <string name="settings_item_internal_audio_desc">Trasmetti l\'audio riprodotto dal dispositivo</string>
+    <string name="settings_item_mute_render_title">Muta questo dispositivo durante lo streaming</string>
+    <string name="settings_item_mute_render_desc">Azzera il volume multimediale qui mentre l\'audio viene catturato, cosi\' non si sente due volte. Disattiva per sentirlo anche su questo dispositivo. Il volume viene ripristinato all\'arresto del server.</string>
     <string name="settings_item_mic_title">Microfono</string>
     <string name="settings_item_mic_desc">Trasmetti l\'audio catturato dal microfono</string>
     <string name="settings_group_audio_quality">Qualità Audio</string>
@@ -188,6 +190,8 @@
     <string name="settings_group_server_protocols">Protocolli Server</string>
     <string name="settings_item_wfas_title">WFAS (Nativo)</string>
     <string name="settings_item_wfas_desc">Protocollo nativo a bassa latenza, usato dalle app mobile e desktop.</string>
+    <string name="settings_item_persist_title">Tieni acceso il server dopo la disconnessione</string>
+    <string name="settings_item_persist_desc">In unicast, se il client se ne va finisce la sessione, non il server: la porta resta aperta in attesa del prossimo. In multicast funziona gia\' cosi\'.</string>
     <string name="settings_item_rtp_title">Flusso RTP/PCM</string>
     <string name="settings_item_rtp_desc">Protocollo standard per VLC, Kodi o FFplay.</string>
     <string name="settings_item_http_title">Stream Web (HTTP)</string>
@@ -270,6 +274,10 @@
     <string name="auto_connect_priorities_title">Priorità Auto-Connect</string>
     <string name="auto_connect_ip_label">Indirizzo IP</string>
     <string name="auto_connect_ssid_label">Rete Wi-Fi (Opzionale)</string>
+    <string name="auto_connect_key_label">Chiave (opzionale)</string>
+    <string name="auto_connect_key_saved">Chiave salvata — digita per sostituirla</string>
+    <string name="auto_connect_key_clear">Rimuovi la chiave salvata</string>
+    <string name="auto_connect_enabled_label">Abilitato</string>
     <string name="auto_connect_add_button">Aggiungi Server</string>
     <string name="auto_connect_move_up">Sposta su</string>
     <string name="auto_connect_move_down">Sposta giù</string>
@@ -327,7 +335,7 @@
     <string name="scripting_security_title">Comandi esterni</string>
     <string name="scripting_security_state_on">Consentiti, con token</string>
     <string name="scripting_security_state_off">Bloccati</string>
-    <string name="scripting_security_explainer">Tag NFC, Tasker, MacroDroid e ADB raggiungono l\'app da un ingresso pubblico, quindi anche qualsiasi altra app installata potrebbe inviare un comando. I comandi esterni restano rifiutati finche\' non li attivi qui. Una volta attivi, vengono eseguiti solo quelli che portano il token qui sotto: gli URI e i comandi generati in questa schermata lo includono gia\'.</string>
+    <string name="scripting_security_explainer">I comandi che arrivano da fuori dall\'app (tag NFC, Tasker, MacroDroid, ADB) restano rifiutati finche\' non li attivi qui. Una volta attivi, vengono eseguiti solo quelli che portano il token qui sotto: gli URI e i comandi generati in questa schermata lo includono gia\'. Se non usi le automazioni, lascialo spento.</string>
     <string name="scripting_security_reveal">Mostra o nascondi il token</string>
     <string name="scripting_security_copy_token">Copia token</string>
     <string name="scripting_security_regenerate">Genera un nuovo token</string>
@@ -366,6 +374,9 @@
     <string name="sec_mode_ask">Chiedi</string>
     <string name="sec_mode_key">Chiave</string>
     <string name="settings_item_auth_key_title">Chiave</string>
+    <string name="key_strength_weak">Chiave debole</string>
+    <string name="key_strength_fair">Chiave discreta</string>
+    <string name="key_strength_strong">Chiave forte</string>
     <string name="settings_item_auth_key_desc">Entrambi i dispositivi devono inserire la stessa chiave. Non viene mai inviata in rete.</string>
     <string name="settings_item_encryption_title">Cifra l\'audio</string>
     <string name="settings_item_encryption_desc">Cifra l\'audio end-to-end con ChaCha20-Poly1305. Richiede la modalità Chiave (chiave pre-condivisa).</string>
