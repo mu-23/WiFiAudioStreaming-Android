@@ -7,9 +7,11 @@
     unreadable blob: it is excluded from both cloud backup and device transfer,
     and the automation token stays tied to the phone that generated it.
 
-    The settings DataStore is excluded for the opposite reason: it holds the
-    pre-shared key in cleartext, and a backup would be a copy of that key
-    somewhere the device no longer controls.
+    The settings DataStore no longer holds any secret — the pre-shared key moved
+    into the same encrypted file as the token — but it stays excluded for a
+    different reason: it holds the highest multicast epoch accepted from each
+    server, and restoring an old copy of that would wind the replay floor back
+    and let beacons this device has already rejected through again.
 -->
 <data-extraction-rules>
     <cloud-backup>

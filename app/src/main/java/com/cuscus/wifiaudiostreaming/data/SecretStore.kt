@@ -28,15 +28,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.security.KeyStore
 
 /**
- * The app's secrets, deliberately kept out of the DataStore.
+ * Every secret the app holds, deliberately kept out of the DataStore: the
+ * automation token, the WFAS pre-shared key in its two copies, and the
+ * per-entry auto-connect keys.
  *
  * The DataStore is fine for settings, but its file is included in Auto Backup
- * and in device-to-device transfer, and a token in cleartext inside a backup is
- * a token that has left the phone. Here the value is encrypted with a key that
+ * and in device-to-device transfer, and a secret in cleartext inside a backup is
+ * a secret that has left the phone. Here the value is encrypted with a key that
  * lives in the Keystore and never leaves the TEE, so a copy of the file is
- * unreadable anywhere else. That ties the token to the device that generated
- * it, which for an automation token is the property we want rather than a side
- * effect.
+ * unreadable anywhere else. That ties each secret to the device that holds it,
+ * which for an automation token is the property we want rather than a side
+ * effect, and for a pre-shared key is at worst harmless: it is re-typed or
+ * re-paired, never silently carried somewhere it was not meant to go.
  *
  * It is no defence against root, which becomes our own UID and can ask the
  * Keystore to decrypt: the point is offline extraction of the data partition,
@@ -47,6 +50,26 @@ class SecretStore private constructor(private val prefs: SharedPreferences) {
 
     private val _automationToken = MutableStateFlow(prefs.getString(KEY_AUTOMATION_TOKEN, "").orEmpty())
     val automationToken: StateFlow<String> = _automationToken.asStateFlow()
+
+    /**
+     * The WFAS pre-shared key, in the two copies the app has always kept: the one
+     * in force (`authKey`, which in QR mode is the generated session key) and the
+     * hand-typed passphrase (`manualAuthKey`), which survives a trip through QR
+     * mode so leaving it gives the user their own key back.
+     *
+     * They come out together because [SettingsDataStore] rebuilds a whole
+     * `AppSettings` from them: two separate flows would emit twice for one save
+     * and hand the UI a half-updated pair in between.
+     */
+    data class AuthKeys(val authKey: String = "", val manualAuthKey: String = "")
+
+    private val _authKeys = MutableStateFlow(readAuthKeys())
+    val authKeys: StateFlow<AuthKeys> = _authKeys.asStateFlow()
+
+    private fun readAuthKeys() = AuthKeys(
+        prefs.getString(KEY_AUTH, "").orEmpty(),
+        prefs.getString(KEY_MANUAL_AUTH, "").orEmpty()
+    )
 
     /** Generates the token on first access and reuses it from then on. */
     @Synchronized
@@ -65,6 +88,54 @@ class SecretStore private constructor(private val prefs: SharedPreferences) {
         prefs.edit().putString(KEY_AUTOMATION_TOKEN, token).commit()
         _automationToken.value = token
         return token
+    }
+
+    @Synchronized
+    fun saveAuthKey(key: String) {
+        writeAuthKey(KEY_AUTH, key)
+    }
+
+    @Synchronized
+    fun saveManualAuthKey(key: String) {
+        writeAuthKey(KEY_MANUAL_AUTH, key)
+    }
+
+    // An empty key is a removal, not an empty string to store: "no key" must not
+    // leave a readable entry behind, and it is what the KEY-mode server checks to
+    // decide it has nothing to authenticate anyone with.
+    private fun writeAuthKey(name: String, key: String) {
+        prefs.edit().apply {
+            if (key.isEmpty()) remove(name) else putString(name, key)
+        }.commit()
+        _authKeys.value = readAuthKeys()
+    }
+
+    /**
+     * One-way move of the keys a build before this one left in cleartext inside
+     * the settings DataStore.
+     *
+     * Only fills what is still empty here. If both stores hold a value the one
+     * already encrypted wins: it is the newer of the two, since every save since
+     * the upgrade has come here, and adopting the stale plaintext would quietly
+     * roll the user's key back. Returns whether anything was taken, so the caller
+     * knows there is a plaintext copy left to delete.
+     */
+    @Synchronized
+    fun adoptLegacyAuthKeys(legacyAuth: String?, legacyManual: String?): Boolean {
+        val current = readAuthKeys()
+        val editor = prefs.edit()
+        var adopted = false
+        if (current.authKey.isEmpty() && !legacyAuth.isNullOrEmpty()) {
+            editor.putString(KEY_AUTH, legacyAuth); adopted = true
+        }
+        if (current.manualAuthKey.isEmpty() && !legacyManual.isNullOrEmpty()) {
+            editor.putString(KEY_MANUAL_AUTH, legacyManual); adopted = true
+        }
+        if (adopted) {
+            editor.commit()
+            _authKeys.value = readAuthKeys()
+        }
+        return adopted
     }
 
     // Per-entry auto-connect keys. Stored here — encrypted, Keystore-backed, out
@@ -92,6 +163,8 @@ class SecretStore private constructor(private val prefs: SharedPreferences) {
         private const val FILE_NAME = "wfas_secrets"
         private const val MASTER_KEY_ALIAS = "wfas_secrets_master_key"
         private const val KEY_AUTOMATION_TOKEN = "automation_token"
+        private const val KEY_AUTH = "auth_key"
+        private const val KEY_MANUAL_AUTH = "manual_auth_key"
         private const val AUTO_CONNECT_KEY_PREFIX = "ac_key_"
 
         @Volatile

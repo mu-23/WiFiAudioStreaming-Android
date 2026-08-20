@@ -24,9 +24,17 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.cuscus.wifiaudiostreaming.UsbLink
 import com.cuscus.wifiaudiostreaming.WfasPolicy
 import com.cuscus.wifiaudiostreaming.scripting.AutomationGate
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * A server in the auto-connect list.
@@ -174,6 +182,7 @@ data class AppSettings(
 
 class SettingsDataStore(context: Context) {
     private val dataStore = context.settingsDataStore
+    private val appContext = context.applicationContext
 
     private object PreferencesKeys {
         val STREAM_INTERNAL = booleanPreferencesKey("stream_internal")
@@ -184,10 +193,8 @@ class SettingsDataStore(context: Context) {
         val LATENCY_MS = intPreferencesKey("latency_ms")
         val MAX_PAYLOAD = intPreferencesKey("max_payload")
         val SECURITY_MODE = stringPreferencesKey("security_mode")
-        val AUTH_KEY = stringPreferencesKey("auth_key")
         val ENCRYPTION_ENABLED = booleanPreferencesKey("encryption_enabled")
         val QR_PAIRING_ENABLED = booleanPreferencesKey("qr_pairing_enabled")
-        val MANUAL_AUTH_KEY = stringPreferencesKey("manual_auth_key")
         val STREAMING_PORT = intPreferencesKey("streaming_port")
         val SEND_CLIENT_MICROPHONE = booleanPreferencesKey("send_client_microphone")
         val MIC_PORT = intPreferencesKey("mic_port")
@@ -234,6 +241,71 @@ class SettingsDataStore(context: Context) {
         val BACKGROUND_SPECTRUM_GROOVE = intPreferencesKey("background_spectrum_groove")
         val AUTOMATION_ENABLED = booleanPreferencesKey("automation_enabled")
         val LEGACY_AUTOMATION_TOKEN = stringPreferencesKey("automation_token")
+        // Read once, to be moved into SecretStore and deleted. Nothing writes
+        // them any more: see [authKeysFlow].
+        val LEGACY_AUTH_KEY = stringPreferencesKey("auth_key")
+        val LEGACY_MANUAL_AUTH_KEY = stringPreferencesKey("manual_auth_key")
+    }
+
+    /**
+     * The pre-shared key does not live here.
+     *
+     * It sits in [SecretStore], encrypted with a Keystore key that does not leave
+     * the device, for the same reason the automation token does: this DataStore is
+     * a plain file, and a key in cleartext inside it is a key that any copy of the
+     * data partition — or of a backup — hands over intact.
+     *
+     * It is still surfaced through [AppSettings] so that every reader keeps seeing
+     * one settings object, which is why the two sources are combined here rather
+     * than the call sites being taught about a second store.
+     *
+     * Opening the encrypted file goes through the Keystore, so the whole producer
+     * runs on IO: `settingsFlow` is collected from the main thread in several
+     * places. A Keystore that refuses to open must not take the settings down with
+     * it either — it fails closed, with no key, which a KEY-mode server reads as
+     * "refuse everyone" rather than "let anyone in".
+     */
+    private fun authKeysFlow(): Flow<SecretStore.AuthKeys> = flow {
+        val store = runCatching { secrets() }.getOrNull()
+        if (store == null) emit(SecretStore.AuthKeys()) else emitAll(store.authKeys)
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * The encrypted store, with the one-way move of whatever a build before this
+     * one left in cleartext done on the way through.
+     *
+     * The plaintext is dropped even when nothing was adopted from it: in that case
+     * the encrypted store already held a value, which is the newer of the two —
+     * every save since the upgrade has gone there — and what is left in the
+     * DataStore is a stale copy of a key, which is exactly what this is trying to
+     * stop existing.
+     */
+    private suspend fun secrets(): SecretStore {
+        val store = SecretStore.get(appContext)
+        migrationLock.withLock {
+            if (!legacyKeysMigrated) {
+                val stored = dataStore.data.first()
+                val legacyAuth = stored[PreferencesKeys.LEGACY_AUTH_KEY]
+                val legacyManual = stored[PreferencesKeys.LEGACY_MANUAL_AUTH_KEY]
+                if (legacyAuth != null || legacyManual != null) {
+                    store.adoptLegacyAuthKeys(legacyAuth, legacyManual)
+                    dataStore.edit { preferences ->
+                        preferences.remove(PreferencesKeys.LEGACY_AUTH_KEY)
+                        preferences.remove(PreferencesKeys.LEGACY_MANUAL_AUTH_KEY)
+                    }
+                }
+                legacyKeysMigrated = true
+            }
+        }
+        return store
+    }
+
+    private companion object {
+        // Process-wide: a SettingsDataStore is built on the spot wherever the
+        // settings are needed, so per-instance state would re-run the migration
+        // on every one of them.
+        val migrationLock = Mutex()
+        @Volatile var legacyKeysMigrated = false
     }
 
     val scriptsFlow: Flow<List<AppScript>> = dataStore.data.map { preferences ->
@@ -246,7 +318,10 @@ class SettingsDataStore(context: Context) {
         }
     }
 
-    val settingsFlow: Flow<AppSettings> = dataStore.data.map { preferences ->
+    val settingsFlow: Flow<AppSettings> = combine(
+        dataStore.data,
+        authKeysFlow()
+    ) { preferences, authKeys ->
         AppSettings(
             streamInternal = preferences[PreferencesKeys.STREAM_INTERNAL] ?: true,
             streamMic = preferences[PreferencesKeys.STREAM_MIC] ?: false,
@@ -300,10 +375,10 @@ class SettingsDataStore(context: Context) {
             latencyMs = preferences[PreferencesKeys.LATENCY_MS] ?: 120,
             maxPayloadBytes = preferences[PreferencesKeys.MAX_PAYLOAD] ?: 1390,
             securityMode = preferences[PreferencesKeys.SECURITY_MODE] ?: "OFF",
-            authKey = preferences[PreferencesKeys.AUTH_KEY] ?: "",
+            authKey = authKeys.authKey,
             encryptionEnabled = preferences[PreferencesKeys.ENCRYPTION_ENABLED] ?: false,
             qrPairingEnabled = preferences[PreferencesKeys.QR_PAIRING_ENABLED] ?: false,
-            manualAuthKey = preferences[PreferencesKeys.MANUAL_AUTH_KEY] ?: "",
+            manualAuthKey = authKeys.manualAuthKey,
             usbModeEnabled = preferences[PreferencesKeys.USB_MODE_ENABLED] ?: false,
             usbLatencyMs = preferences[PreferencesKeys.USB_LATENCY_MS] ?: UsbLink.DEFAULT_USB_LATENCY_MS,
             wfasMode = preferences[PreferencesKeys.WFAS_MODE] ?: WfasPolicy.MODE_OFF_ON_USB,
@@ -417,10 +492,16 @@ class SettingsDataStore(context: Context) {
         }
     }
 
+    // Il modo resta qui, la chiave va nella custodia cifrata. Se il Keystore non
+    // si apre la chiave non viene salvata: il modo si', e in modo KEY senza
+    // chiave il server rifiuta tutti - si perde una connessione, non si apre una
+    // porta. Come per il token, un fallimento del Keystore non fa cadere l'app.
     suspend fun saveSecurity(mode: String, key: String) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.SECURITY_MODE] = mode
-            preferences[PreferencesKeys.AUTH_KEY] = key
+        }
+        withContext(Dispatchers.IO) {
+            runCatching { secrets().saveAuthKey(key) }
         }
     }
 
@@ -431,8 +512,8 @@ class SettingsDataStore(context: Context) {
     }
 
     suspend fun saveManualAuthKey(key: String) {
-        dataStore.edit { preferences ->
-            preferences[PreferencesKeys.MANUAL_AUTH_KEY] = key
+        withContext(Dispatchers.IO) {
+            runCatching { secrets().saveManualAuthKey(key) }
         }
     }
 

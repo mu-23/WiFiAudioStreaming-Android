@@ -4,9 +4,10 @@
 
     Two things stay on the device. The encrypted secrets file, because the key
     that opens it never leaves the Keystore and a copy elsewhere would be an
-    unreadable blob anyway. And the settings DataStore, because it holds the
-    pre-shared key in cleartext: a backup is a copy of that key somewhere the
-    device no longer controls.
+    unreadable blob anyway. And the settings DataStore, which no longer holds any
+    secret but does hold the highest multicast epoch accepted from each server:
+    restoring an old copy of that would wind the replay floor back and let
+    beacons this device has already rejected through again.
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="wfas_secrets.xml" />

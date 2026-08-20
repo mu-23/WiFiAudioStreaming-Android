@@ -42,6 +42,17 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        resources {
+            // bcprov-jdk18on e' un multi-release JAR: porta una copia alternativa
+            // di alcune classi sotto META-INF/versions/, e con lei il MANIFEST
+            // OSGi che collide con quello di jspecify al merge delle risorse.
+            // Su Android quella roba non viene comunque mai letta - D8 dexa solo
+            // le classi in root e il runtime non implementa il multi-release -
+            // quindi non si sceglie quale delle due tenere: si buttano entrambe.
+            excludes += "META-INF/versions/**"
+        }
+    }
 }
 
 dependencies {
@@ -79,9 +90,7 @@ dependencies {
     implementation("io.ktor:ktor-server-cio:2.3.11") // Motore server
     implementation("io.ktor:ktor-network:2.3.11")
 
-    implementation("org.bouncycastle:bcprov-jdk15on:1.70")
-    implementation("org.bouncycastle:bctls-jdk15on:1.70")
-    implementation("org.bouncycastle:bcpkix-jdk15on:1.70")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
     // Coroutine
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
