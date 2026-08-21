@@ -1,0 +1,10 @@
+📺 DLNA: stream to smart TVs, AV receivers and network speakers
+🔊 Snapcast server: snapclients play in sync, room after room
+📷 QR pairing: address, port and key in one scan
+🔌 USB streaming for lower latency
+🎨 Background spectrogram with Groove
+🔔 Rebuilt notifications with volume controls
+⭐ Auto-connect remembers keys and ports
+🛡️ Security fixes: please update from v1.1
+
+⚠️ Tasker/NFC/ADB commands now need a token: enable them in Automation & Scripting and recopy them
