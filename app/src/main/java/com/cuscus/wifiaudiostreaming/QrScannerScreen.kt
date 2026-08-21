@@ -11,7 +11,6 @@
 
 package com.cuscus.wifiaudiostreaming
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.camera.core.CameraControl
@@ -96,17 +95,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.graphics.shapes.*
-import com.google.mlkit.vision.barcode.BarcodeScanner
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import zxingcpp.BarcodeReader
 
 object QrCameraSupport {
     fun hasCamera(context: Context): Boolean =
@@ -121,7 +116,6 @@ private enum class ScanFeedback { None, NotWfas, Expired }
 
 private const val REJECT_COOLDOWN_MS = 2800L
 
-@SuppressLint("UnsafeOptInUsageError")
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun QrScannerScreen(
@@ -143,7 +137,25 @@ fun QrScannerScreen(
     val rejectUntil = remember { AtomicLong(0L) }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
     val boundProvider = remember { AtomicReference<ProcessCameraProvider?>(null) }
-    val activeScanner = remember { AtomicReference<BarcodeScanner?>(null) }
+
+    // zxing-cpp: decoder nativo Apache-2.0, sincrono, gia' pronto per ImageProxy.
+    // La costruzione carica la .so (System.loadLibrary): se l'ABI non e' fra
+    // quelle nell'APK preferiamo un lettore assente a un crash della schermata.
+    val barcodeReader = remember {
+        runCatching {
+            BarcodeReader(
+                BarcodeReader.Options(
+                    formats = setOf(BarcodeReader.Format.QR_CODE),
+                    tryHarder = true,
+                    tryRotate = true,
+                    tryInvert = true,
+                    tryDownscale = true,
+                    maxNumberOfSymbols = 1,
+                    textMode = BarcodeReader.TextMode.PLAIN
+                )
+            )
+        }.getOrNull()
+    }
 
     val handleRaw: (String) -> Unit = remember {
         { raw ->
@@ -194,7 +206,6 @@ fun QrScannerScreen(
     DisposableEffect(Unit) {
         onDispose {
             runCatching { boundProvider.getAndSet(null)?.unbindAll() }
-            runCatching { activeScanner.getAndSet(null)?.close() }
             analysisExecutor.shutdown()
         }
     }
@@ -222,34 +233,28 @@ fun QrScannerScreen(
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
 
-                    val options = BarcodeScannerOptions.Builder()
-                        .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                        .build()
-                    val scanner = BarcodeScanning.getClient(options)
-                    activeScanner.set(scanner)
-
                     val analysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                         .build()
 
                     analysis.setAnalyzer(analysisExecutor) { proxy ->
-                        val mediaImage = proxy.image
-                        if (mediaImage == null || acceptedFlag.get()) {
-                            proxy.close()
-                            return@setAnalyzer
-                        }
-                        val image = InputImage.fromMediaImage(
-                            mediaImage,
-                            proxy.imageInfo.rotationDegrees
-                        )
-                        scanner.process(image)
-                            .addOnSuccessListener { barcodes ->
-                                val raw = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
+                        val reader = barcodeReader
+                        try {
+                            if (reader != null && !acceptedFlag.get()) {
+                                // read() e' sincrono e gira gia' su analysisExecutor:
+                                // legge il solo piano Y del frame, senza copie.
+                                val raw = runCatching { reader.read(proxy) }
+                                    .getOrNull()
+                                    ?.firstOrNull { !it.text.isNullOrBlank() }
+                                    ?.text
                                 if (raw != null) {
                                     ContextCompat.getMainExecutor(ctx).execute { handleRaw(raw) }
                                 }
                             }
-                            .addOnCompleteListener { proxy.close() }
+                        } finally {
+                            proxy.close()
+                        }
                     }
 
                     val selectors = listOf(

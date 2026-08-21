@@ -99,10 +99,11 @@ dependencies {
 
     implementation("androidx.graphics:graphics-shapes:1.0.1")
 
+    // ZXing Core (Java): sola generazione dei QR di pairing.
     implementation(libs.zxing.core)
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
-    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.zxingcpp.android)
 }

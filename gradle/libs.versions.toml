@@ -13,7 +13,12 @@ composeBom = "2024.09.00"
 material3 = "1.5.0-alpha02"
 zxing = "3.5.3"
 camerax = "1.4.2"
-mlkitBarcode = "17.3.0"
+# zxing-cpp 2.3.0 e' l'ultima release compilata con Kotlin 1.9: dalla 3.0.0 in
+# poi i metadata sono Kotlin 2.2+/2.3+ e il compilatore 2.0.21 di questo
+# progetto non li legge (INCOMPATIBLE_CLASS -> ICE del checker FIR).
+# Per salire a zxing-cpp 3.x va prima alzato "kotlin" qui sopra a 2.3.x.
+# La 2.3.0 dipende da camera-core 1.4.1, in linea con il resto di CameraX.
+zxingcpp = "2.3.0"
 profileinstaller = "1.4.1"
 securityCrypto = "1.1.0"
 
@@ -44,7 +49,7 @@ androidx-camera-core = { group = "androidx.camera", name = "camera-core", versio
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
-mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
+zxingcpp-android = { group = "io.github.zxing-cpp", name = "android", version.ref = "zxingcpp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

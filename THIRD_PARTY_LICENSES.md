@@ -28,10 +28,12 @@ We are grateful to all of these projects.
 | kotlinx.coroutines (Android) | 1.8.0 | Apache License 2.0 | JetBrains s.r.o. |
 | Ktor (client-core, client-cio, server-core, server-cio, network) | 2.3.11 | Apache License 2.0 | JetBrains s.r.o. |
 | ZXing Core | 3.5.3 | Apache License 2.0 | ZXing authors |
+| zxing-cpp (Android wrapper + native library) | 2.3.0 | Apache License 2.0 | Axel Waggershauser and contributors |
 | AndroidX CameraX (core, camera2, lifecycle, view) | 1.4.2 | Apache License 2.0 | The Android Open Source Project |
 | AndroidX Graphics Shapes | 1.0.1 | Apache License 2.0 | The Android Open Source Project |
-| Google ML Kit Barcode Scanning | 17.3.0 | [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms) (proprietary, redistributable) | Google LLC |
-| Bouncy Castle (`bcprov`, `bctls`, `bcpkix` jdk15on) | 1.70 | Bouncy Castle Licence (MIT-style) | The Legion of the Bouncy Castle Inc. |
+| AndroidX Security Crypto | 1.1.0 | Apache License 2.0 | The Android Open Source Project |
+| AndroidX ProfileInstaller | 1.4.1 | Apache License 2.0 | The Android Open Source Project |
+| Bouncy Castle (`bcprov-jdk18on`) | 1.78.1 | Bouncy Castle Licence (MIT-style) | The Legion of the Bouncy Castle Inc. |
 | JUnit 4 *(test only, not shipped)* | — | Eclipse Public License 1.0 | JUnit contributors |
 | AndroidX Test, Espresso *(test only, not shipped)* | — | Apache License 2.0 | The Android Open Source Project |
 
@@ -50,33 +52,40 @@ The following components are licensed under the Apache License, Version 2.0
 * Kotlin standard library and kotlinx.coroutines — © JetBrains s.r.o.
 * Ktor — © JetBrains s.r.o.
 * ZXing Core — © ZXing authors (<https://github.com/zxing/zxing>)
+* zxing-cpp — © Axel Waggershauser and contributors (<https://github.com/zxing-cpp/zxing-cpp>)
 
 A full copy of the Apache License 2.0 is available at the URL above. `NOTICE`
 files shipped by these projects are preserved in their respective artifacts.
 
 ---
 
-## Google ML Kit
+## QR codes: encoding and decoding
 
-`com.google.mlkit:barcode-scanning` is © Google LLC and is **not** distributed
-under an OSI-approved open-source licence. It is redistributable inside an
-application under the ML Kit terms of service:
+Two distinct libraries, both Apache 2.0:
 
-<https://developers.google.com/ml-kit/terms>
+* **ZXing Core** (`com.google.zxing:core`, pure Java) **generates** the pairing
+  QR codes shown on screen.
+* **zxing-cpp** (`io.github.zxing-cpp:android`) **decodes** the QR codes read
+  from the camera. It is the C++ port of ZXing, shipped as an AAR containing
+  the `libzxingcpp_android.so` native library built from the sources at
+  <https://github.com/zxing-cpp/zxing-cpp> — no prebuilt third-party blob and
+  no proprietary component. Decoding is entirely on-device: no frame, image or
+  decoded value is sent anywhere.
 
-It is used only to decode pairing QR codes from the camera feed. The model runs
-on the device: no frame, image or decoded value is sent anywhere.
+This application contains **no proprietary dependency** and no Google Play
+Services / ML Kit component; it runs unchanged on devices without Google
+services.
 
 ---
 
 ## Bouncy Castle Licence
 
-Bouncy Castle (`bcprov-jdk15on`, `bctls-jdk15on`, `bcpkix-jdk15on` 1.70) is
-© 2000–2021 The Legion of the Bouncy Castle Inc. (<https://www.bouncycastle.org>)
+Bouncy Castle (`bcprov-jdk18on` 1.78.1) is
+© 2000–2024 The Legion of the Bouncy Castle Inc. (<https://www.bouncycastle.org>)
 and is distributed under an MIT-style licence:
 
 ```
-Copyright (c) 2000–2021 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org)
+Copyright (c) 2000–2024 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
