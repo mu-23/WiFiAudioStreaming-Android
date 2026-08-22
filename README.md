@@ -52,6 +52,20 @@ This application allows you to send your phone's audio to any device on the loca
 
 ---
 
+## ⚠️ Security & Encryption Notice
+
+The optional WFAS encryption feature is provided **"AS IS"** and is intended primarily as a lightweight privacy and traffic-protection layer for trusted local networks (LAN/P2P).
+
+It is **not intended to provide protection against high-threat attackers, hostile networks, or security-critical environments**, and it should not be relied upon as a substitute for a dedicated secure transport or other security mechanisms where stronger guarantees are required.
+
+Users and integrators are responsible for evaluating whether WFAS's security properties and their network environment are appropriate for their intended use.
+
+The WFAS protocol and its reference implementations are provided under the terms of their respective open-source licenses. No additional security guarantees are implied beyond those explicitly documented by the protocol and implementation.
+
+Security issues should be reported to the project maintainers so they can be investigated and addressed in future releases.
+
+---
+
 ## 📡 Protocol Guide
 
 Choose the best streaming protocol for your needs:
