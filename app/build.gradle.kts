@@ -17,8 +17,8 @@ android {
         applicationId = "com.cuscus.wifiaudiostreaming"
         minSdk = 24
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.2"
+        versionCode = 11
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -44,12 +44,6 @@ android {
     }
     packaging {
         resources {
-            // bcprov-jdk18on e' un multi-release JAR: porta una copia alternativa
-            // di alcune classi sotto META-INF/versions/, e con lei il MANIFEST
-            // OSGi che collide con quello di jspecify al merge delle risorse.
-            // Su Android quella roba non viene comunque mai letta - D8 dexa solo
-            // le classi in root e il runtime non implementa il multi-release -
-            // quindi non si sceglie quale delle due tenere: si buttano entrambe.
             excludes += "META-INF/versions/**"
         }
     }
