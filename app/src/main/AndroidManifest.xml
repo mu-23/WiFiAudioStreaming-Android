@@ -122,6 +122,16 @@
             android:exported="false"/>
 
         <service
+            android:name=".RtpClientService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false"/>
+
+        <service
+            android:name=".SnapcastClientService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false"/>
+
+        <service
             android:name=".AudioCaptureService"
             android:foregroundServiceType="mediaProjection|microphone"
             android:exported="false" />

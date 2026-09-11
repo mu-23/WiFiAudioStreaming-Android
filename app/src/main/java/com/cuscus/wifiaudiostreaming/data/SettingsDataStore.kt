@@ -143,6 +143,16 @@ data class AppSettings(
     val snapcastChunkMs: Int = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.CHUNK_MS,
     val snapcastBufferMs: Int = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.BUFFER_MS,
     val snapcastStreamName: String = com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.STREAM_NAME,
+    /**
+     * Server Snapcast salvati nella sezione Ricevi, uno per riga
+     * (vedi SnapcastServerRef.serialize). Sono configurazioni, non segreti.
+     */
+    val snapcastServers: List<String> = emptyList(),
+    /**
+     * Sorgenti RTP salvate nella sezione Ricevi, una per riga
+     * (vedi RtpSource.serialize). Sono configurazioni, non segreti.
+     */
+    val rtpSources: List<String> = emptyList(),
     val lastMulticastMode: Boolean = false,
     // Muto il volume media mentre catturo l'audio interno, cosi' non si sente due
     // volte; spento, si sente sia qui che sul client.
@@ -219,6 +229,8 @@ class SettingsDataStore(context: Context) {
         val SNAPCAST_CHUNK_MS = intPreferencesKey("snapcast_chunk_ms")
         val SNAPCAST_BUFFER_MS = intPreferencesKey("snapcast_buffer_ms")
         val SNAPCAST_STREAM_NAME = stringPreferencesKey("snapcast_stream_name")
+        val SNAPCAST_SERVERS = stringPreferencesKey("snapcast_servers")
+        val RTP_SOURCES = stringPreferencesKey("rtp_sources")
         val CLIENT_TILE_IP = stringPreferencesKey("client_tile_ip")
         val AUTO_CONNECT_ENABLED = booleanPreferencesKey("auto_connect_enabled")
         val AUTO_CONNECT_LIST = stringPreferencesKey("auto_connect_list")
@@ -346,6 +358,10 @@ class SettingsDataStore(context: Context) {
             dlnaDevices = (preferences[PreferencesKeys.DLNA_DEVICES] ?: "")
                 .split('\n').map { it.trim() }.filter { it.isNotEmpty() },
             httpSafariMode = preferences[PreferencesKeys.HTTP_SAFARI_MODE] ?: false,
+            snapcastServers = (preferences[PreferencesKeys.SNAPCAST_SERVERS] ?: "")
+                .split('\n').map { it.trim() }.filter { it.isNotEmpty() },
+            rtpSources = (preferences[PreferencesKeys.RTP_SOURCES] ?: "")
+                .split('\n').map { it.trim() }.filter { it.isNotEmpty() },
             snapcastEnabled = preferences[PreferencesKeys.SNAPCAST_ENABLED] ?: false,
             snapcastPort = preferences[PreferencesKeys.SNAPCAST_PORT]
                 ?: com.cuscus.wifiaudiostreaming.snapcast.SnapcastDefaults.STREAM_PORT,
@@ -665,6 +681,18 @@ class SettingsDataStore(context: Context) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.DLNA_PORT] = port
             preferences[PreferencesKeys.DLNA_FORMAT] = format
+        }
+    }
+
+    suspend fun saveRtpSources(entries: List<String>) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.RTP_SOURCES] = entries.joinToString("\n")
+        }
+    }
+
+    suspend fun saveSnapcastServers(entries: List<String>) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.SNAPCAST_SERVERS] = entries.joinToString("\n")
         }
     }
 

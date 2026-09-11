@@ -102,6 +102,8 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -127,6 +129,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.cuscus.wifiaudiostreaming.data.AppSettings
 import kotlin.math.min
+import com.cuscus.wifiaudiostreaming.rtp.RtpSession
+import com.cuscus.wifiaudiostreaming.rtp.RtpState
+import com.cuscus.wifiaudiostreaming.snapcast.SnapStreamState
+import com.cuscus.wifiaudiostreaming.snapcast.SnapcastReceiver
 
 object HeroOrbAnchor {
     val bounds = androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
@@ -213,8 +219,108 @@ fun ExpressiveHomeScreen(
     onGenerateInvite: (Boolean) -> Unit = {}
 ) {
     val sourceReady = appSettings.streamInternal || appSettings.streamMic
+
+    /*
+     * Ricevere e' ricevere, da qualunque protocollo arrivi.
+     *
+     * Una sessione Snapcast attiva e' una sessione a tutti gli effetti: deve
+     * accendere la stessa schermata del client WFAS, con la stessa forma viva
+     * in alto, o l'app direbbe "sto cercando" mentre sta suonando. Quel che
+     * cambia e' il segno al centro della forma, perche' sapere da dove arriva
+     * l'audio e' l'unica differenza che conta davvero.
+     */
+    val snapServer by SnapcastReceiver.server.collectAsState()
+    val snapLive = snapServer != null
+
+    val rtpSource by RtpSession.source.collectAsState()
+    val rtpLive = rtpSource != null
+
+    val live = isStreaming || snapLive || rtpLive
+
+    // Il cavo vince su tutto, da tutte e due le parti: se l'audio passa di li'
+    // e' la prima cosa da sapere -- spiega la latenza, spiega perche' il wifi
+    // non c'entra, e si vede prima di leggere qualunque scritta.
+    val usbSession = usbLinkState.isReady && NetworkManager.sessionUsesUsb()
+
+    // WFAS sulla rete: sempre, mai, o mai finche' c'e' il cavo. Serve qui
+    // perche' un server con WFAS spento sta trasmettendo lo stesso -- con
+    // RTP, HTTP, DLNA o Snapcast -- e la forma deve dire con cosa, invece di
+    // mostrare il logo di un protocollo che in quel momento e' spento.
+    val wfasOnNetwork = when (appSettings.wfasMode.uppercase()) {
+        WfasPolicy.MODE_OFF -> false
+        WfasPolicy.MODE_ALWAYS -> true
+        else -> !usbLinkState.isReady
+    }
+    val otherProtocols = buildList<LiveProtocol> {
+        if (appSettings.rtpEnabled) add(LiveProtocol.RTP)
+        if (appSettings.httpEnabled) add(LiveProtocol.HTTP)
+        if (appSettings.dlnaEnabled) add(LiveProtocol.DLNA)
+        if (appSettings.snapcastEnabled) add(LiveProtocol.SNAPCAST)
+    }
+    // Uno a caso fra quelli accesi, e quello resta per tutta la sessione:
+    // sceglierlo a ogni ridisegno sarebbe uno sfarfallio, sceglierlo una volta
+    // per sempre farebbe credere che gli altri non ci siano. Si ritira quando
+    // cambia l'elenco o quando si riparte.
+    val serverMark = remember(otherProtocols, isStreaming) {
+        otherProtocols.randomOrNull() ?: LiveProtocol.WFAS
+    }
+
+    val liveProtocol = when {
+        usbSession -> LiveProtocol.USB
+        snapLive -> LiveProtocol.SNAPCAST
+        rtpLive -> LiveProtocol.RTP
+        isServer && !wfasOnNetwork -> serverMark
+        else -> LiveProtocol.WFAS
+    }
+
+    val heroContext = LocalContext.current
+    val snapStream by SnapcastReceiver.streamStatus.collectAsState()
+
+    /*
+     * Il pulsante nella forma ferma quel che si sta ascoltando ADESSO.
+     *
+     * Prima chiamava sempre onStopServer, che per una sessione Snapcast e' la
+     * cosa sbagliata: fermerebbe il server WFAS — magari acceso, magari no — e
+     * lascerebbe la musica dove sta. Un pulsante di stop che non ferma quel che
+     * si sente e' peggio di nessun pulsante.
+     */
+    val onStopLive: () -> Unit = when {
+        snapLive -> ({ stopSnapcastSession(heroContext) })
+        rtpLive -> ({ stopRtpSession(heroContext) })
+        else -> onStopServer
+    }
+
+    // Sotto il titolo va detto cosa sta succedendo davvero: lo stato della
+    // connessione WFAS non racconta niente di una sessione Snapcast.
+    val rtpStatus by RtpSession.status.collectAsState()
+
+    val heroStatus = if (rtpLive) {
+        val state = stringResource(
+            when (rtpStatus.state) {
+                RtpState.WAITING -> R.string.rtp_state_waiting
+                RtpState.PLAYING -> R.string.rtp_state_playing
+                RtpState.ERROR -> R.string.rtp_state_error
+                RtpState.IDLE -> R.string.rtp_state_idle
+            }
+        )
+        listOfNotNull(state, rtpSource?.displayName()).joinToString("  ·  ")
+    } else if (snapLive) {
+        val state = stringResource(
+            when (snapStream.state) {
+                SnapStreamState.CONNECTING -> R.string.snap_state_connecting
+                SnapStreamState.BUFFERING -> R.string.snap_state_buffering
+                SnapStreamState.PLAYING -> R.string.snap_state_playing
+                SnapStreamState.ERROR -> R.string.snap_state_error
+                SnapStreamState.IDLE -> R.string.snap_state_idle
+            }
+        )
+        listOfNotNull(state, snapServer?.displayName()).joinToString("  ·  ")
+    } else {
+        connectionStatus
+    }
+
     val phase = when {
-        isStreaming -> HeroPhase.Live
+        live -> HeroPhase.Live
         isServer && sourceReady -> HeroPhase.Ready
         isServer -> HeroPhase.Configuring
         else -> HeroPhase.Searching
@@ -232,7 +338,7 @@ fun ExpressiveHomeScreen(
     )
 
     val canvasColor by animateColorAsState(
-        targetValue = if (isStreaming) MaterialTheme.colorScheme.surfaceContainerLowest
+        targetValue = if (live) MaterialTheme.colorScheme.surfaceContainerLowest
         else MaterialTheme.colorScheme.background,
         animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "HomeCanvas"
@@ -249,7 +355,7 @@ fun ExpressiveHomeScreen(
 
         // ── Ambient spectrum background – Z layer right above canvasColor ─────
         AmbientSpectrumBackground(
-            isStreaming = isStreaming,
+            isStreaming = live,
             enabled = spectrumEnabled,
             style = appSettings.backgroundSpectrumStyle,
             groove = appSettings.backgroundSpectrumGroove,
@@ -274,12 +380,13 @@ fun ExpressiveHomeScreen(
 
             StateHero(
                 phase = phase,
+                protocol = liveProtocol,
                 isServer = isServer,
                 accent = accent,
-                connectionStatus = connectionStatus,
+                connectionStatus = heroStatus,
                 localIp = localIp,
                 hasMicPermission = hasMicPermission,
-                usbConnected = usbLinkState.isReady && NetworkManager.sessionUsesUsb(),
+                usbConnected = usbSession,
                 keyMissing = SecurityMode.requiresKey(appSettings.securityMode) &&
                         !appSettings.qrPairingEnabled &&
                         appSettings.authKey.isBlank(),
@@ -293,20 +400,20 @@ fun ExpressiveHomeScreen(
                 ),
                 onActivateWfas = onActivateWfas,
                 onStartServer = onStartServer,
-                onStopServer = onStopServer
+                onStopServer = onStopLive
             )
 
             Spacer(Modifier.height(28.dp))
 
             AnimatedVisibility(
-                visible = !isStreaming,
+                visible = !live,
                 enter = expandVertically(tween(320, easing = FastOutSlowInEasing)) + fadeIn(tween(280, delayMillis = 60)),
                 exit = shrinkVertically(tween(240, easing = FastOutSlowInEasing)) + fadeOut(tween(140))
             ) {
                 Column {
                     ModeSwitcher(
                         isServer = isServer,
-                        enabled = !isStreaming,
+                        enabled = !live,
                         onToggleMode = { serverMode ->
                             onToggleMode(serverMode)
                             if (!serverMode) onRefresh()
@@ -339,6 +446,22 @@ fun ExpressiveHomeScreen(
                         )
                     }
                 )
+            }
+
+            AnimatedVisibility(
+                visible = snapLive,
+                enter = expandVertically(tween(320, easing = FastOutSlowInEasing)) + fadeIn(tween(280, delayMillis = 60)),
+                exit = shrinkVertically(tween(240, easing = FastOutSlowInEasing)) + fadeOut(tween(140))
+            ) {
+                SnapcastSessionSection()
+            }
+
+            AnimatedVisibility(
+                visible = rtpLive,
+                enter = expandVertically(tween(320, easing = FastOutSlowInEasing)) + fadeIn(tween(280, delayMillis = 60)),
+                exit = shrinkVertically(tween(240, easing = FastOutSlowInEasing)) + fadeOut(tween(140))
+            ) {
+                RtpSessionSection()
             }
 
             AnimatedVisibility(
@@ -433,7 +556,7 @@ fun ExpressiveHomeScreen(
             }
 
             AnimatedVisibility(
-                visible = !isServer && !isStreaming,
+                visible = !isServer && !live,
                 enter = expandVertically(tween(320, easing = FastOutSlowInEasing)) + fadeIn(tween(280, delayMillis = 60)),
                 exit = shrinkVertically(tween(240, easing = FastOutSlowInEasing)) + fadeOut(tween(140))
             ) {
@@ -513,6 +636,19 @@ fun ExpressiveHomeScreen(
                         onConnect = onConnect,
                         onRefresh = onRefresh
                     )
+
+                    // Gli impianti Snapcast stanno nella stessa schermata dei
+                    // server WFAS — la domanda e' la stessa, "a cosa mi
+                    // collego" — ma con un colore diverso, perche' sono un'altra
+                    // famiglia e provarci con la chiave sbagliata fa perdere
+                    // tempo. Si porta tutto da solo: stato, ricerca e sessione
+                    // vivono piu' a lungo di questa schermata.
+                    SnapcastClientSection(appSettings = appSettings)
+
+                    // RTP non si annuncia in rete: non c'e' niente da scoprire,
+                    // solo un indirizzo che qualcuno ti ha dato. Sta sotto
+                    // Snapcast per questo — e' il modo piu' manuale dei tre.
+                    RtpClientSection(appSettings = appSettings)
                 }
             }
 
@@ -565,6 +701,7 @@ private fun HomeMasthead(
 @Composable
 private fun StateHero(
     phase: HeroPhase,
+    protocol: LiveProtocol,
     isServer: Boolean,
     accent: Color,
     connectionStatus: String,
@@ -799,7 +936,7 @@ private fun StateHero(
             }
 
             AnimatedContent(
-                targetState = phase,
+                targetState = phase to protocol,
                 transitionSpec = {
                     (fadeIn(tween(220)) + scaleIn(initialScale = 0.6f)).togetherWith(
                         fadeOut(tween(160)) + scaleOut(targetScale = 0.6f)
@@ -811,19 +948,33 @@ private fun StateHero(
                     scaleY = tapScale.value * handoffReveal
                     alpha = handoffReveal
                 }
-            ) { p ->
-                Icon(
-                    imageVector = when (p) {
-                        HeroPhase.Live -> Icons.Outlined.GraphicEq
-                        HeroPhase.Ready -> Icons.Outlined.WifiTethering
-                        HeroPhase.Searching -> Icons.Outlined.Podcasts
-                        HeroPhase.Configuring -> Icons.Outlined.Info
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(if (live) 76.dp else 60.dp),
-                    tint = if (live) MaterialTheme.colorScheme.surfaceContainerLowest
-                    else accent
-                )
+            ) { (p, proto) ->
+                val tint = if (live) MaterialTheme.colorScheme.surfaceContainerLowest else accent
+                val markSize = if (live) 76.dp else 60.dp
+                // In sessione il segno dice il protocollo; fuori sessione dice
+                // la fase, perche' li' non c'e' ancora nessun protocollo da dire.
+                val protocolMark = if (p == HeroPhase.Live) proto.drawable() else null
+                val protocolIcon = if (p == HeroPhase.Live) proto.icon() else null
+                if (protocolMark != null) {
+                    Icon(
+                        painter = painterResource(id = protocolMark),
+                        contentDescription = null,
+                        modifier = Modifier.size(markSize),
+                        tint = tint
+                    )
+                } else {
+                    Icon(
+                        imageVector = protocolIcon ?: when (p) {
+                            HeroPhase.Live -> Icons.Outlined.GraphicEq
+                            HeroPhase.Ready -> Icons.Outlined.WifiTethering
+                            HeroPhase.Searching -> Icons.Outlined.Podcasts
+                            HeroPhase.Configuring -> Icons.Outlined.Info
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(markSize),
+                        tint = tint
+                    )
+                }
             }
         }
 

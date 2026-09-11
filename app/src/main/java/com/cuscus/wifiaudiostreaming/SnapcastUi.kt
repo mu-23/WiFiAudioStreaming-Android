@@ -171,6 +171,7 @@ fun SnapcastSettingsSection(appSettings: AppSettings) {
                 description = stringResource(R.string.settings_item_snapcast_name_desc),
                 icon = Icons.Outlined.Speaker,
                 value = appSettings.snapcastStreamName,
+                numeric = false,
                 onValueChange = { text -> persist(streamName = text.trim().ifBlank { SnapcastDefaults.STREAM_NAME }) }
             )
 

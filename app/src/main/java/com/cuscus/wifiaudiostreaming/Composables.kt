@@ -85,6 +85,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1403,11 +1404,31 @@ fun SettingsTextFieldItem(
     description: String,
     icon: ImageVector,
     value: String,
+    /**
+     * Se il campo e' un numero.
+     *
+     * Era l'unica cosa che questo campo sapeva fare: filtro a sole cifre e
+     * tastiera numerica, scritti dentro. Va benissimo per le otto porte che lo
+     * usano, ma il nono campo e' il nome di uno stream Snapcast -- e li' il
+     * filtro mangiava ogni lettera mentre si scriveva, con la tastiera dei
+     * numeri aperta davanti. Da fuori sembrava un campo rotto.
+     */
+    numeric: Boolean = true,
+    maxLength: Int = if (numeric) 5 else 40,
     onValueChange: (String) -> Unit
 ) {
     var text by remember(value) { mutableStateOf(value) }
+    var hadFocus by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val fieldHaptics = rememberAppHaptics()
+
+    fun commit() {
+        if (text != value) onValueChange(text)
+        // Campo svuotato e lasciato li': si rimette quello che c'era. Un
+        // riquadro vuoto al posto di un'impostazione fa credere di averla
+        // persa.
+        if (text.isBlank()) text = value
+    }
 
     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1421,13 +1442,15 @@ fun SettingsTextFieldItem(
         OutlinedTextField(
             value = text,
             onValueChange = { newValue ->
-                if (newValue.all { it.isDigit() } && newValue.length <= 5) {
+                val ok = if (numeric) newValue.all { it.isDigit() }
+                else newValue.none { it.isISOControl() }
+                if (ok && newValue.length <= maxLength) {
                     text = newValue
                 }
             },
             label = { Text(title) },
             keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number,
+                keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text,
                 imeAction = ImeAction.Done
             ),
             singleLine = true,
@@ -1435,10 +1458,20 @@ fun SettingsTextFieldItem(
                 Icon(imageVector = icon, contentDescription = null)
             },
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            // Anche uscendo dal campo si tiene quel che si e' scritto: prima
+            // valeva solo il tasto Fine della tastiera, e chi toccava altrove
+            // -- che e' il modo normale di finire di scrivere -- si vedeva
+            // tornare il valore di prima senza capire perche'.
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp)
+                .onFocusChanged { state ->
+                    if (hadFocus && !state.isFocused) commit()
+                    hadFocus = state.isFocused
+                },
             keyboardActions = KeyboardActions(onDone = {
                 fieldHaptics.confirm()
-                onValueChange(text)
+                commit()
                 focusManager.clearFocus()
             })
         )
@@ -4785,6 +4818,19 @@ fun ExpressiveHttpBanner(ip: String, port: Int) {
     }
 }
 
+/**
+ * Il volume di trasmissione.
+ *
+ * Era una card a se': contenitore con un raggio suo, una barra disegnata a
+ * mano alta cinquanta punti e tre bottoni squadrati. Funzionava, ma non
+ * somigliava a niente del resto dell'app -- e una cosa che non somiglia a
+ * niente, in una schermata, sembra arrivata da un'altra parte.
+ *
+ * Adesso e' fatta dei pezzi che l'app usa gia' ovunque: il contenitore delle
+ * righe, il segno che morfa mentre trascini, la pastiglia del numero, il
+ * cursore che sta anche nelle impostazioni, e la fila di scelte con la sua
+ * fisica -- premi una pastiglia e le vicine si stringono.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressiveVolumeSlider(
@@ -4806,14 +4852,8 @@ fun ExpressiveVolumeSlider(
         else -> Icons.Outlined.VolumeUp
     }
 
-    val mutedLabel = stringResource(R.string.volume_muted)
-    val volumeStateLabel = when {
-        volume <= 0.01f -> mutedLabel
-        volume < 1.0f -> "$percentage%"
-        volume == 1.0f -> "100% (Std)"
-        else -> "$percentage% (Boost)"
-    }
-
+    // Il colore dice da solo dove sei: muto e' un errore, sopra il 100% e'
+    // un'altra cosa ancora. Scriverlo anche a parole sarebbe ripeterlo.
     val badgeColor by animateColorAsState(
         targetValue = when {
             volume <= 0.01f -> MaterialTheme.colorScheme.error
@@ -4834,220 +4874,126 @@ fun ExpressiveVolumeSlider(
         label = "VolumeIconShape"
     )
 
-    Surface(
-        shape = RoundedCornerShape(34.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = modifier.fillMaxWidth()
+    // La larghezza la decide chi la mette in pagina: una delle due schermate
+    // che la usano la vuole leggermente rientrata, e imporla qui gliela
+    // toglierebbe senza che si veda perche'.
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(28.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(MorphOutlineShape(volumeMorph, volumeShape))
+                    .background(badgeColor.copy(alpha = 0.20f)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(MorphOutlineShape(volumeMorph, volumeShape))
-                        .background(badgeColor.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = volumeIcon,
-                        contentDescription = null,
-                        tint = badgeColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.transmission_volume, percentage),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = stringResource(R.string.server_audio_restart_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = badgeColor.copy(alpha = 0.16f)
-                ) {
-                    Text(
-                        text = volumeStateLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = FontFamily.Monospace,
-                        color = badgeColor,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
-                }
+                Icon(
+                    imageVector = volumeIcon,
+                    contentDescription = null,
+                    tint = badgeColor,
+                    modifier = Modifier.size(24.dp)
+                )
             }
-
-            ExpressiveVolumeTrack(
-                volume = volume,
-                badgeColor = badgeColor,
-                dragging = isDragging,
-                onSeek = { valValue ->
-                    if (!isDragging) {
-                        isDragging = true
-                        haptics.gestureStart()
-                    }
-                    val step = (valValue * 20).toInt()
-                    if (step != lastStep) {
-                        lastStep = step
-                        if (step == 0 || step == 20 || step == 40) {
-                            haptics.confirm()
-                        } else {
-                            haptics.tick()
-                        }
-                    }
-                    onVolumeChange(valValue)
-                },
-                onSeekFinished = {
-                    isDragging = false
-                    haptics.gestureEnd()
-                }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.volume_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.server_audio_restart_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            ExpressiveCountPill(
+                text = if (volume <= 0.01f) stringResource(R.string.volume_muted).uppercase()
+                else "$percentage%",
+                accent = badgeColor
             )
-
-            if (showPresets) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val presets = listOf(
-                        0f to stringResource(R.string.volume_preset_mute),
-                        1f to stringResource(R.string.volume_preset_std),
-                        2f to stringResource(R.string.volume_preset_max)
-                    )
-                    presets.forEach { (presetValue, label) ->
-                        val isSelected = kotlin.math.abs(volume - presetValue) < 0.05f
-                        val presetColor by animateColorAsState(
-                            targetValue = if (isSelected) badgeColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                            label = "PresetColor"
-                        )
-                        val presetCorner by animateDpAsState(
-                            targetValue = if (isSelected) 26.dp else 14.dp,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            ),
-                            label = "PresetCorner"
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(presetCorner),
-                            color = if (isSelected) badgeColor.copy(alpha = 0.20f) else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    haptics.confirm()
-                                    onVolumeChange(presetValue)
-                                }
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
-                                color = presetColor,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(vertical = 12.dp)
-                            )
-                        }
-                    }
-                }
-            }
         }
-    }
-}
 
-@Composable
-private fun ExpressiveVolumeTrack(
-    volume: Float,
-    badgeColor: Color,
-    dragging: Boolean,
-    onSeek: (Float) -> Unit,
-    onSeekFinished: () -> Unit
-) {
-    val inactive = MaterialTheme.colorScheme.surfaceContainerHighest
-    var widthPx by remember { mutableStateOf(1f) }
+        Slider(
+            value = volume.coerceIn(0f, 2f),
+            onValueChange = { value ->
+                if (!isDragging) {
+                    isDragging = true
+                    haptics.gestureStart()
+                }
+                // Un colpetto ogni cinque punti, e uno piu' deciso sui tre
+                // valori che contano: senza, il pollice non sa dov'e'.
+                val step = (value * 20).toInt()
+                if (step != lastStep) {
+                    lastStep = step
+                    if (step == 0 || step == 20 || step == 40) haptics.confirm() else haptics.tick()
+                }
+                onVolumeChange(value)
+            },
+            onValueChangeFinished = {
+                isDragging = false
+                haptics.gestureEnd()
+            },
+            valueRange = 0f..2f,
+            colors = SliderDefaults.colors(
+                thumbColor = badgeColor,
+                activeTrackColor = badgeColor,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
 
-    val trackHeight by animateDpAsState(
-        targetValue = if (dragging) 52.dp else 44.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
-        ),
-        label = "VolTrackHeight"
-    )
-
-    fun seekTo(x: Float) = onSeek((x / widthPx).coerceIn(0f, 1f) * 2f)
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(trackHeight)
-            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
-            .pointerInput(Unit) {
-                detectTapGestures { seekTo(it.x); onSeekFinished() }
+        if (showPresets) {
+            val selected = when {
+                kotlin.math.abs(volume - 0f) < 0.05f -> "0"
+                kotlin.math.abs(volume - 1f) < 0.05f -> "1"
+                kotlin.math.abs(volume - 2f) < 0.05f -> "2"
+                else -> ""
             }
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragEnd = { onSeekFinished() },
-                    onDragCancel = { onSeekFinished() }
-                ) { change, _ -> seekTo(change.position.x) }
-            }
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val h = size.height
-            val r = h / 2f
-            val gap = h * 0.14f
-            val fill = (volume / 2f).coerceIn(0f, 1f) * size.width
-            val handleW = h * 0.20f
-
-            drawRoundRect(
-                color = inactive,
-                topLeft = Offset(0f, 0f),
-                size = Size(size.width, h),
-                cornerRadius = CornerRadius(r, r)
-            )
-
-            val activeEnd = (fill - handleW / 2f - gap).coerceAtLeast(0f)
-            if (activeEnd > 0f) {
-                drawRoundRect(
-                    color = badgeColor,
-                    topLeft = Offset(0f, 0f),
-                    size = Size(activeEnd, h),
-                    cornerRadius = CornerRadius(r, r)
-                )
-            }
-
-            val stdX = size.width / 2f
-            if (fill < stdX - handleW) {
-                drawRoundRect(
-                    color = badgeColor.copy(alpha = 0.45f),
-                    topLeft = Offset(stdX - h * 0.045f, h * 0.30f),
-                    size = Size(h * 0.09f, h * 0.40f),
-                    cornerRadius = CornerRadius(h * 0.05f, h * 0.05f)
-                )
-            }
-
-            val handleX = fill.coerceIn(handleW / 2f + gap, size.width - handleW / 2f - gap)
-            drawRoundRect(
-                color = badgeColor,
-                topLeft = Offset(handleX - handleW / 2f, h * 0.10f),
-                size = Size(handleW, h * 0.80f),
-                cornerRadius = CornerRadius(handleW / 2f, handleW / 2f)
+            ExpressiveChoiceRow(
+                options = listOf(
+                    ChoiceOption(Icons.Outlined.VolumeOff, stringResource(R.string.volume_muted), "0"),
+                    ChoiceOption(Icons.Outlined.VolumeDown, "100%", "1"),
+                    ChoiceOption(Icons.Outlined.VolumeUp, "200%", "2")
+                ),
+                selectedValue = selected,
+                accent = badgeColor,
+                onSelect = { value ->
+                    val target = when (value) {
+                        "0" -> 0f
+                        "1" -> 1f
+                        else -> 2f
+                    }
+                    lastStep = (target * 20).toInt()
+                    onVolumeChange(target)
+                }
             )
         }
     }
 }
 
+/**
+ * L'indirizzo del server, da toccare per copiarlo.
+ *
+ * E' una riga come quelle dei dispositivi trovati in rete, e non e' un vezzo:
+ * fa la stessa cosa -- la tocchi e ti porta via qualcosa -- quindi deve avere
+ * la stessa faccia. Prima era il pezzo piu' grosso della schermata, con dentro
+ * tre cose separate (il segno, il testo, una pastiglia "COPIA") e un lampo di
+ * colore pieno su tutta la larghezza quando copiavi: nient'altro nell'app fa
+ * cosi', e infatti sembrava arrivato da un'altra applicazione.
+ *
+ * Adesso la conferma sta dove sta l'azione: il quadratino a destra diventa una
+ * spunta, il segno a sinistra si apre in un quadrifoglio, e la riga sotto lo
+ * dice a parole. Due secondi e torna com'era.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ExpressiveIpCopyButton(
@@ -5059,129 +5005,129 @@ fun ExpressiveIpCopyButton(
     val haptics = rememberAppHaptics()
     var copied by remember { mutableStateOf(false) }
 
-    val tapScale = remember { Animatable(1f) }
-    val scope = rememberCoroutineScope()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
 
-    val iconShape = remember { MaterialShapes.Clover4Leaf }
-    val morph = remember { Morph(MaterialShapes.Circle, iconShape) }
-    val shapeProgress = remember { Animatable(0f) }
-
-    LaunchedEffect(Unit) {
-        shapeProgress.animateTo(
-            1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
-        )
-    }
-
-    val containerColor by animateColorAsState(
-        targetValue = if (copied) accent else accent.copy(alpha = 0.14f),
-        animationSpec = spring(),
-        label = "IpCopyContainer"
+    val corner by animateDpAsState(
+        targetValue = if (pressed) 14.dp else 28.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "IpCopyCorner"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "IpCopyScale"
     )
 
-    val contentColor by animateColorAsState(
-        targetValue = if (copied) MaterialTheme.colorScheme.surfaceContainerLowest else accent,
-        animationSpec = spring(),
-        label = "IpCopyContent"
+    val morph = remember { Morph(MaterialShapes.Circle, MaterialShapes.Clover4Leaf) }
+    val morphProgress by animateFloatAsState(
+        targetValue = if (copied) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "IpCopyBadge"
     )
 
-    Surface(
-        shape = RoundedCornerShape(34.dp),
-        color = containerColor,
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
-                scaleX = tapScale.value
-                scaleY = tapScale.value
+                scaleX = scale
+                scaleY = scale
             }
-            .clickable {
+            .clip(RoundedCornerShape(corner))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clickable(interactionSource = interaction, indication = null) {
                 haptics.confirm()
                 clipboard.setText(AnnotatedString(localIp))
                 copied = true
-                scope.launch {
-                    tapScale.snapTo(0.93f)
-                    tapScale.animateTo(
-                        1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioHighBouncy,
-                            stiffness = Spring.StiffnessMedium
-                        )
-                    )
-                }
             }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(MorphOutlineShape(morph, morphProgress))
+                .background(accent.copy(alpha = 0.20f)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(MorphOutlineShape(morph, shapeProgress.value))
-                    .background(contentColor.copy(alpha = if (copied) 0.25f else 0.16f)),
-                contentAlignment = Alignment.Center
-            ) {
+            Icon(
+                imageVector = Icons.Outlined.Wifi,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = accent
+            )
+        }
+
+        Spacer(Modifier.width(16.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = localIp,
+                style = MaterialTheme.typography.titleMedium,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            AnimatedContent(
+                targetState = copied,
+                transitionSpec = {
+                    (fadeIn(tween(200)) + scaleIn(initialScale = 0.85f))
+                        .togetherWith(fadeOut(tween(110)) + scaleOut(targetScale = 0.85f))
+                },
+                label = "IpCopyHint"
+            ) { isCopied ->
+                Text(
+                    text = stringResource(
+                        if (isCopied) R.string.copied_to_clipboard else R.string.tap_to_copy_ip
+                    ).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.sp,
+                    fontWeight = if (isCopied) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isCopied) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(accent),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedContent(
+                targetState = copied,
+                transitionSpec = {
+                    (fadeIn(tween(180)) + scaleIn(initialScale = 0.6f))
+                        .togetherWith(fadeOut(tween(100)) + scaleOut(targetScale = 0.6f))
+                },
+                label = "IpCopyIcon"
+            ) { isCopied ->
                 Icon(
-                    imageVector = Icons.Filled.Wifi,
-                    contentDescription = null,
+                    imageVector = if (isCopied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+                    contentDescription = stringResource(
+                        if (isCopied) R.string.copied_uppercase else R.string.copy_uppercase
+                    ),
                     modifier = Modifier.size(22.dp),
-                    tint = contentColor
+                    tint = MaterialTheme.colorScheme.surfaceContainerLowest
                 )
-            }
-
-            Spacer(Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.server_ip_format, localIp),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = contentColor
-                )
-                Text(
-                    text = if (copied) stringResource(R.string.copied_to_clipboard) else stringResource(R.string.tap_to_copy_ip),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = contentColor.copy(alpha = 0.8f)
-                )
-            }
-
-            Spacer(Modifier.width(10.dp))
-
-            Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = contentColor.copy(alpha = if (copied) 0.25f else 0.12f)
-            ) {
-                AnimatedContent(
-                    targetState = copied,
-                    transitionSpec = {
-                        (fadeIn(tween(180)) + scaleIn()).togetherWith(fadeOut(tween(120)) + scaleOut())
-                    },
-                    label = "CopyBadgeState"
-                ) { isCopied ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isCopied) Icons.Filled.Check else Icons.Filled.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = contentColor
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (isCopied) stringResource(R.string.copied_uppercase) else stringResource(R.string.copy_uppercase),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.sp,
-                            color = contentColor
-                        )
-                    }
-                }
             }
         }
     }
@@ -5193,6 +5139,7 @@ fun ExpressiveIpCopyButton(
         }
     }
 }
+
 
 private enum class ScriptFieldType { BOOL, INT, TEXT, SAMPLERATE, CHANNELS, AUTHMODE, WFASMODE }
 

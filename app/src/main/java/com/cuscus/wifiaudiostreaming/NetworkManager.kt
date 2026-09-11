@@ -179,6 +179,12 @@ object NetworkManager {
     private var originalMediaVolume: Int? = null
     private var micStreamingJob: Job? = null
     @Volatile private var rtpPcmQueue: java.util.concurrent.ArrayBlockingQueue<ByteArray>? = null
+
+    /** Byte di audio che la coda RTP non ha accettato: il timestamp li salta. */
+    private val rtpSkippedBytes = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /** Mezzo secondo di ritardo e il ritmo si rifa' da adesso, invece di rincorrere. */
+    private val rtpPaceResyncNs = 500_000_000L
     private var rtpJob: Job? = null
 
     @Volatile private var httpPcmQueue: java.util.concurrent.ArrayBlockingQueue<ByteArray>? = null
@@ -497,7 +503,7 @@ object NetworkManager {
 
     private const val PLC_XFADE_FRAMES = 96
 
-    private fun bestContinuationFrame(ref: ShortArray, channels: Int, refFrames: Int): Int {
+    internal fun bestContinuationFrame(ref: ShortArray, channels: Int, refFrames: Int): Int {
         if (refFrames < 4) return 0
         val lastBase = (refFrames - 1) * channels
         val prevBase = (refFrames - 2) * channels
@@ -516,7 +522,12 @@ object NetworkManager {
         return bestFrame
     }
 
-    private fun rampedConceal(ref: ByteArray, wantedBytes: Int, frameSize: Int): ByteArray? {
+    /**
+     * Riempie un buco ripetendo l'ultimo audio buono, con la giuntura scelta
+     * dove si sente meno. La usa anche il client Snapcast: e' la stessa
+     * mascheratura, e duplicarla vorrebbe dire farla divergere.
+     */
+    internal fun rampedConceal(ref: ByteArray, wantedBytes: Int, frameSize: Int): ByteArray? {
         if (frameSize <= 0) return null
         val total = wantedBytes - (wantedBytes % frameSize)
         val refUsable = ref.size - (ref.size % frameSize)
@@ -551,7 +562,7 @@ object NetworkManager {
         return out
     }
 
-    private fun crossfadeIntoReal(real: ByteArray, off: Int, len: Int, tail: ByteArray, frameSize: Int): ByteArray {
+    internal fun crossfadeIntoReal(real: ByteArray, off: Int, len: Int, tail: ByteArray, frameSize: Int): ByteArray {
         val out = real.copyOfRange(off, off + len)
         val channels = (frameSize / 2).coerceAtLeast(1)
         val n = minOf(tail.size / frameSize, len / frameSize)
@@ -792,10 +803,18 @@ object NetworkManager {
     ) = launch(Dispatchers.IO) {
         val queue = java.util.concurrent.ArrayBlockingQueue<ByteArray>(25)
         rtpPcmQueue = queue
+        rtpSkippedBytes.set(0L)
 
         var sequenceNumber = (Math.random() * 65535).toInt()
         var rtpTimestamp = (Math.random() * Int.MAX_VALUE).toLong()
         val ssrc = (Math.random() * Int.MAX_VALUE).toLong()
+        val rtpFrameBytes = channels * 2
+        val rtpClockRate = sampleRate.toLong().coerceAtLeast(8000L)
+
+        /** Quando tocca al prossimo pacchetto. 0 = non abbiamo ancora un ritmo. */
+        var nextDueNs = 0L
+        /** Da mettere sul primo pacchetto dopo un buco, come vuole RFC 3551. */
+        var marker = false
 
         val socket = if (isMulticast) {
             MulticastSocket().apply {
@@ -813,6 +832,22 @@ object NetworkManager {
         try {
             while (isActive) {
                 val pcmLeBytes = queue.poll(200, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
+
+                // Quel che la coda ha buttato via non e' audio che non e'
+                // esistito: e' audio che manca. Il timestamp lo salta, cosi'
+                // chi ascolta vede il buco e lo copre; senza, crederebbe che
+                // il flusso sia continuo e si ritroverebbe in anticipo di quel
+                // tanto per tutto il resto della sessione.
+                val skippedBytes = rtpSkippedBytes.getAndSet(0L)
+                if (skippedBytes >= rtpFrameBytes) {
+                    val skippedFrames = skippedBytes / rtpFrameBytes
+                    rtpTimestamp += skippedFrames
+                    if (nextDueNs != 0L) {
+                        nextDueNs += skippedFrames * 1_000_000_000L / rtpClockRate
+                    }
+                    marker = true
+                }
+
                 val maxPayloadSize = 1400
                 var offset = 0
 
@@ -822,7 +857,9 @@ object NetworkManager {
                     val buf = java.nio.ByteBuffer.wrap(rtpPacket).order(java.nio.ByteOrder.BIG_ENDIAN)
 
                     // Header RTP
-                    buf.put(0x80.toByte()); buf.put(96.toByte())
+                    buf.put(0x80.toByte())
+                    buf.put(if (marker) (96 or 0x80).toByte() else 96.toByte())
+                    marker = false
                     buf.putShort((sequenceNumber and 0xFFFF).toShort())
                     buf.putInt((rtpTimestamp and 0xFFFFFFFFL).toInt())
                     buf.putInt((ssrc and 0xFFFFFFFFL).toInt())
@@ -832,10 +869,36 @@ object NetworkManager {
                     val beBuf = buf.asShortBuffer()
                     while (leBuf.hasRemaining()) beBuf.put(leBuf.get())
 
+                    val samplesInChunk = chunkSize / 2 / channels
+
+                    // Il ritmo: ogni pacchetto parte quando gli tocca.
+                    //
+                    // Il resto del server manda a raffica, e per WFAS va bene:
+                    // il suo client sa a quale campione va suonato ogni
+                    // pacchetto e ha una coda che assorbe le ondate. Un
+                    // ricevitore RTP no -- RTP e' un flusso e basta, e chi lo
+                    // ascolta si aspetta che arrivi al ritmo con cui si suona.
+                    // Un blocco intero di pacchetti insieme, e poi silenzio
+                    // fino al blocco dopo, vuol dire una coda che si svuota
+                    // fino in fondo a ogni giro.
+                    //
+                    // Il ritmo si conta sui campioni, non sull'orologio: cosi'
+                    // e' esattamente quello con cui la scheda audio li produce
+                    // e non deriva. Se restiamo indietro di mezzo secondo --
+                    // l'audio si e' fermato, il thread e' stato via -- si
+                    // riparte da adesso invece di rincorrere il passato.
+                    val nowNs = System.nanoTime()
+                    if (nextDueNs == 0L || nowNs - nextDueNs > rtpPaceResyncNs) {
+                        nextDueNs = nowNs
+                    } else if (nextDueNs - nowNs > 1_000_000L) {
+                        delay((nextDueNs - nowNs) / 1_000_000L)
+                    }
+                    nextDueNs += samplesInChunk * 1_000_000_000L / rtpClockRate
+
                     runCatching { socket.send(DatagramPacket(rtpPacket, rtpPacket.size, destAddress, port)) }
 
                     sequenceNumber = (sequenceNumber + 1) and 0xFFFF
-                    rtpTimestamp += (chunkSize / 2 / channels)
+                    rtpTimestamp += samplesInChunk
                     offset += chunkSize
                 }
             }
@@ -1447,7 +1510,11 @@ object NetworkManager {
 
                         val chunk = raw.copyOf(aligned)
                         httpPcmQueue?.let { if (it.remainingCapacity() > 0) it.offer(chunk) }
-                        rtpPcmQueue?.let  { if (it.remainingCapacity() > 0) it.offer(chunk) }
+                        rtpPcmQueue?.let {
+                            if (it.remainingCapacity() <= 0 || !it.offer(chunk)) {
+                                rtpSkippedBytes.addAndGet(chunk.size.toLong())
+                            }
+                        }
                         dlnaManager?.submitPcm(chunk)
                         snapcastManager?.submitPcm(chunk)
                         // Feed ambient spectrum visualizer (server side)

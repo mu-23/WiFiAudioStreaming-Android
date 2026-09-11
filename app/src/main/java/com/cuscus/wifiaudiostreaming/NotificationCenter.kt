@@ -36,6 +36,8 @@ object NotificationCenter {
     const val ID_CLIENT = 201
     const val ID_AUTO_CONNECT = 301
     const val ID_AUTOMATION_BLOCKED = 401
+    const val ID_SNAPCAST = 501
+    const val ID_RTP = 601
 
     const val CHANNEL_SERVER = "wfas_server_v3"
     const val CHANNEL_CLIENT = "wfas_client_v3"
@@ -129,6 +131,8 @@ object NotificationCenter {
         manager.cancel(ID_SERVER)
         manager.cancel(ID_CLIENT)
         manager.cancel(ID_AUTO_CONNECT)
+        manager.cancel(ID_SNAPCAST)
+        manager.cancel(ID_RTP)
     }
 
     fun volumePercent(volume: Float): Int =
@@ -176,6 +180,28 @@ object NotificationCenter {
             .setContentText(status)
             .setShortCriticalText(context.getString(R.string.notif_chip_live))
             .addAction(stopAction(context))
+            .build()
+
+    /**
+     * Il client Snapcast ha la sua notifica, non quella del client WFAS.
+     *
+     * Sono due modi diversi di ascoltare e possono anche essere attivi
+     * insieme: una notifica sola direbbe la cosa sbagliata su almeno uno dei
+     * due, e il pulsante di stop fermerebbe quello sbagliato.
+     */
+    fun snapcastNotification(context: Context, status: String): Notification =
+        baseBuilder(context, CHANNEL_CLIENT, R.drawable.ic_notif_client)
+            .setContentTitle(context.getString(R.string.notif_snapcast_title))
+            .setContentText(status)
+            .setShortCriticalText(context.getString(R.string.notif_chip_live))
+            .build()
+
+    /** Come quella Snapcast, e per lo stesso motivo: sono ascolti diversi. */
+    fun rtpNotification(context: Context, status: String): Notification =
+        baseBuilder(context, CHANNEL_CLIENT, R.drawable.ic_notif_client)
+            .setContentTitle(context.getString(R.string.notif_rtp_title))
+            .setContentText(status)
+            .setShortCriticalText(context.getString(R.string.notif_chip_live))
             .build()
 
     fun autoConnectNotification(
