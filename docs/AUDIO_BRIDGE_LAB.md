@@ -126,9 +126,10 @@ audio policies differ from AOSP/scrcpy behavior.
 
 ## Experiment 2: App + Shizuku UserService
 
-This is now the preferred lab path for normal Android-to-Android internal-audio
-streaming. It is designed to remove the PC and MediaProjection from day-to-day
-use.
+This is now the **default internal-audio backend** in the lab app. It is designed
+to remove the PC and MediaProjection from day-to-day use. The old MediaProjection
+backend is kept only as an explicit compatibility choice in Settings; Shizuku
+never silently falls back to screen sharing.
 
 ### Target flow
 
@@ -168,10 +169,20 @@ those versions local playback may be redirected while capture is active.
   Android 11+ can do that on-device through wireless debugging, so a PC is not
   required for normal use.
 
-### First integrated scope
+### Backend selection and current scope
 
-The first integrated Shizuku sender intentionally supports only the path we need
-to prove first:
+Settings -> Audio sources now exposes an explicit internal-audio backend:
+
+- **Shizuku** — default.
+- **Legacy / MediaProjection** — compatibility option only; this is the only
+  internal-audio choice allowed to launch Android screen-sharing authorization.
+
+Selecting internal audio with the Shizuku backend always enters the Shizuku
+startup path. Unsupported combinations stop with a visible explanation rather
+than falling back to MediaProjection.
+
+The first integrated Shizuku sender intentionally supports the path we need to
+prove first:
 
 - internal audio
 - WFAS unicast
@@ -183,8 +194,12 @@ to prove first:
 
 The lab currently requires WFAS security mode `OFF` for this path. Auth,
 encryption, microphone mixing, multicast, RTP, HTTP, DLNA and Snapcast are not
-yet wired into the privileged bridge. The app refuses to pretend these features
-are protected/supported rather than silently sending plaintext.
+yet wired into the privileged bridge. If internal audio and microphone are both
+selected, the current session sends internal audio only and shows a warning.
+The preference is not silently changed.
+
+The app refuses to pretend unsupported features are protected/supported and
+never falls back to MediaProjection automatically.
 
 ### How to start it
 
@@ -202,6 +217,25 @@ the capture and UDP sender directly.
 The receiver should discover the sender automatically. Manual IP connection to
 the normal WFAS streaming port remains useful as a fallback while this is still
 a lab build.
+
+### Settings/UI audit
+
+The lab settings now expose user-facing controls for features that previously
+existed only in code:
+
+- internal-audio backend (Shizuku / legacy MediaProjection)
+- app language (system / Simplified Chinese / English)
+- capture buffer size
+- receiver "keep connected" behavior
+- direct shortcut to open Shizuku
+
+Simplified Chinese and English string resources are kept at parity. The update
+checker and Android release links point to this independent repository rather
+than the former upstream Android repository.
+
+Receiver "keep connected" remains enabled by default. When enabled, transport
+timeouts and Wi-Fi interruptions trigger recovery/reconnect until the user
+explicitly disconnects. It can now be disabled in Settings.
 
 ### What still needs device validation
 
