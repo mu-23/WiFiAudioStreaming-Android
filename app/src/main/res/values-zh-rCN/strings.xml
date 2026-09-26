@@ -761,4 +761,16 @@
     <string name="shizuku_backend_limit_desc">内部音频默认使用 Shizuku。不支持的组合会明确停止并提示，绝不会再自动回退到屏幕共享。目前已接通的是安全模式关闭时的 WFAS 单播。</string>
     <string name="shizuku_mic_mix_setting_title">麦克风混音尚未接入</string>
 
+    <string name="update_dialog_available_title">发现新版本</string>
+    <string name="update_dialog_available_body">已有新版本可以下载。</string>
+    <string name="update_dialog_up_to_date_title">已是最新版本</string>
+    <string name="update_dialog_up_to_date_body">当前已是最新版本（%1$s）。</string>
+    <string name="update_dialog_failed_title">无法连接 GitHub</string>
+    <string name="update_dialog_failed_body">暂时无法连接 GitHub 检查更新，请稍后再试。</string>
+    <string name="update_dialog_ahead_title">当前构建比最新 Release 更新</string>
+    <string name="update_dialog_ahead_body">当前安装的构建版本高于最新公开发布版本。</string>
+    <string name="update_dialog_github">打开 GitHub Releases</string>
+    <string name="update_dialog_later">稍后</string>
+    <string name="update_dialog_close">关闭</string>
+
 </resources>
