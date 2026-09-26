@@ -49,9 +49,13 @@ jobs:
           echo "WFAS_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
           echo "WFAS_VERSION_NAME=1.2.1-audio-bridge-lab.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
-      - name: Build lab debug APK
+      - name: Run unit tests
         run: |
           chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Build lab debug APK
+        run: |
           ./gradlew :app:assembleDebug --stacktrace
 
       - name: Prepare artifact
