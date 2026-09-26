@@ -130,7 +130,7 @@ object ShizukuAudioBridgeManager {
                     bindAndStart(context, it)
                 }
             } else {
-                fail(context, "Shizuku permission denied")
+                fail(context, context.getString(R.string.shizuku_status_permission_denied))
             }
         }
 
