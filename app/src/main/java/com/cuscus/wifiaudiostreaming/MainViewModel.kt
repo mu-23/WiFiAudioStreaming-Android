@@ -138,7 +138,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // risponde si resta in silenzio.
             when (r) {
                 is UpdateChecker.Result.Available -> _updateBanner.value = r
-                is UpdateChecker.Result.Ahead     -> _versionAhead.value = r
+                // A local/custom build can legitimately be newer than the
+                // latest published release. Automatic checks stay silent in
+                // that case; manual checks still report the exact result.
+                is UpdateChecker.Result.Ahead     -> Unit
                 else -> Unit
             }
         }
