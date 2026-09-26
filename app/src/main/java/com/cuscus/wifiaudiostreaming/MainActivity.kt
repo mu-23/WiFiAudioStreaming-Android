@@ -432,7 +432,7 @@ class MainActivity : ComponentActivity() {
         // Keep the first integration deliberately narrow: WFAS unicast, internal
         // audio only. RTP/HTTP/DLNA/Snapcast/multicast and microphone still use
         // the production MediaProjection/AudioCaptureService pipeline.
-        val shizukuBridgeEligible =
+        val shizukuBridgeShapeEligible =
             params.streamInternal &&
                 !params.streamMic &&
                 !params.isMulticast &&
@@ -442,7 +442,24 @@ class MainActivity : ComponentActivity() {
                 !params.snapcastEnabled &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
 
-        if (shizukuBridgeEligible) {
+        if (shizukuBridgeShapeEligible) {
+            // The first Shizuku transport intentionally has no auth/crypto yet.
+            // Never advertise a secured sender while actually accepting plaintext.
+            val settings = viewModel.appSettings.value
+            val securityOff =
+                settings != null &&
+                    settings.securityMode.equals("OFF", ignoreCase = true) &&
+                    !settings.encryptionEnabled &&
+                    !settings.qrPairingEnabled
+
+            if (!securityOff) {
+                pendingServerParams = null
+                viewModel.updateStatus(
+                    "Shizuku lab bridge currently requires security mode OFF; auth/encryption is not wired yet."
+                )
+                return
+            }
+
             val channels = if (params.channelConfig == "STEREO") 2 else 1
             ShizukuAudioBridgeManager.start(
                 this,
@@ -451,7 +468,8 @@ class MainActivity : ComponentActivity() {
                     sampleRate = params.sampleRate,
                     channels = channels,
                     packetBytes = 512,
-                    keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+                    networkInterfaceName = params.networkInterface
                 )
             )
             pendingServerParams = null
