@@ -175,7 +175,7 @@ to prove first:
 
 - internal audio
 - WFAS unicast
-- PCM 16-bit
+- 48 kHz / stereo / PCM 16-bit for the first proven format
 - automatic WFAS discovery
 - source phone local playback retained on Android 13+
 - foreground host + CPU/Wi-Fi locks
