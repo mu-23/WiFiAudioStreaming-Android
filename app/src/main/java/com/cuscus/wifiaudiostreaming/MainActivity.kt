@@ -715,7 +715,7 @@ class MainActivity : AppCompatActivity() {
         LaunchedEffect(pendingStartServer.value) {
             if (pendingStartServer.value) {
                 pendingStartServer.value = false
-                startMediaProjectionRequest()
+                startServerRequest()
             }
         }
 
@@ -785,7 +785,7 @@ class MainActivity : AppCompatActivity() {
             localIp = localIp,
             onToggleMode = viewModel::toggleMode,
             onStartServer = {
-                startMediaProjectionRequest()
+                startServerRequest()
             },
             onStopServer = {
                 // Lo stato autorevole e' quello di NetworkManager, non il ruolo
@@ -1077,7 +1077,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun startMediaProjectionRequest() {
+    private fun startServerRequest() {
         val settings = viewModel.appSettings.value ?: return
         val command = ScriptCommand(
             ScriptActionType.START_SERVER,
