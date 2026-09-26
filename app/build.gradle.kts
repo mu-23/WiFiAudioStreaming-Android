@@ -16,6 +16,19 @@ android {
         includeInBundle = false
     }
 
+    signingConfigs {
+        getByName("debug") {
+            System.getenv("WFAS_LAB_KEYSTORE")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { path ->
+                    storeFile = file(path)
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.cuscus.wifiaudiostreaming.lab"
         minSdk = 24
