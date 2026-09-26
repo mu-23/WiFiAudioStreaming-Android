@@ -25,6 +25,7 @@ import android.util.Log;
 
 import androidx.annotation.Keep;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -124,9 +125,21 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 } catch (Throwable policyFailure) {
                     Log.w(TAG, "AudioPolicy playback capture failed, trying REMOTE_SUBMIX fallback", policyFailure);
                     releaseCapture();
-                    recorder = createRemoteSubmixCapture(sampleRate, channels, safePacketBytes);
-                    captureMode = "REMOTE_SUBMIX fallback";
-                    activeCaptureMode = captureMode;
+                    try {
+                        recorder = createRemoteSubmixCapture(sampleRate, channels, safePacketBytes);
+                        captureMode = "REMOTE_SUBMIX fallback";
+                        activeCaptureMode = captureMode;
+                    } catch (Throwable submixFailure) {
+                        throw new IllegalStateException(
+                                "AudioPolicy failed [" +
+                                        String.valueOf(policyFailure.getMessage()) +
+                                        "]; REMOTE_SUBMIX failed [" +
+                                        submixFailure.getClass().getSimpleName() + ": " +
+                                        String.valueOf(submixFailure.getMessage()) +
+                                        "]",
+                                submixFailure
+                        );
+                    }
                 }
             } else if (Build.VERSION.SDK_INT >= 30) {
                 recorder = createRemoteSubmixCapture(sampleRate, channels, safePacketBytes);
@@ -478,7 +491,30 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             int channels,
             boolean keepPlayingOnDevice
     ) throws Exception {
-        Throwable broadFailure;
+        StringBuilder failures = new StringBuilder();
+
+        // 1) Closest to the AudioPolicy example that scrcpy adopted:
+        // system Context + shell attribution + MEDIA-only rule.
+        try {
+            AudioRecord record = createAudioPolicyCapture(
+                    sampleRate,
+                    channels,
+                    keepPlayingOnDevice,
+                    new int[] { AudioAttributes.USAGE_MEDIA },
+                    true,
+                    true
+            );
+            activeCaptureMode = keepPlayingOnDevice
+                    ? "AudioPolicy system-shell LOOP_BACK_RENDER"
+                    : "AudioPolicy system-shell LOOP_BACK";
+            return record;
+        } catch (Throwable t) {
+            appendFailure(failures, "system-shell", t);
+            Log.w(TAG, "system-shell AudioPolicy capture failed", t);
+        }
+
+        // 2) Keep the broader MEDIA/GAME/UNKNOWN matching used by WFAS, but still
+        // use system Context. Some OEMs are happier with the broad mix.
         try {
             AudioRecord record = createAudioPolicyCapture(
                     sampleRate,
@@ -489,42 +525,50 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                             AudioAttributes.USAGE_GAME,
                             AudioAttributes.USAGE_UNKNOWN
                     },
+                    true,
                     true
             );
             activeCaptureMode = keepPlayingOnDevice
-                    ? "AudioPolicy LOOP_BACK_RENDER"
-                    : "AudioPolicy LOOP_BACK";
+                    ? "AudioPolicy system-shell broad LOOP_BACK_RENDER"
+                    : "AudioPolicy system-shell broad LOOP_BACK";
             return record;
         } catch (Throwable t) {
-            broadFailure = t;
-            Log.w(TAG, "Broad AudioPolicy mix failed, retrying scrcpy-compatible MEDIA-only mix", t);
+            appendFailure(failures, "system-shell-broad", t);
+            Log.w(TAG, "system-shell broad AudioPolicy capture failed", t);
         }
 
+        // 3) Last AudioPolicy attempt: shell-attributed app Context. Retained for
+        // OEMs where ActivityThread system Context is restricted.
         try {
             AudioRecord record = createAudioPolicyCapture(
                     sampleRate,
                     channels,
                     keepPlayingOnDevice,
                     new int[] { AudioAttributes.USAGE_MEDIA },
+                    false,
                     false
             );
             activeCaptureMode = keepPlayingOnDevice
-                    ? "AudioPolicy scrcpy-compat LOOP_BACK_RENDER"
-                    : "AudioPolicy scrcpy-compat LOOP_BACK";
+                    ? "AudioPolicy app-shell LOOP_BACK_RENDER"
+                    : "AudioPolicy app-shell LOOP_BACK";
             return record;
         } catch (Throwable t) {
-            IllegalStateException combined = new IllegalStateException(
-                    "AudioPolicy capture failed; broad=" +
-                            broadFailure.getClass().getSimpleName() + ": " +
-                            String.valueOf(broadFailure.getMessage()) +
-                            "; scrcpy-compat=" +
-                            t.getClass().getSimpleName() + ": " +
-                            String.valueOf(t.getMessage()),
-                    t
-            );
-            combined.addSuppressed(broadFailure);
-            throw combined;
+            appendFailure(failures, "app-shell", t);
+            Log.w(TAG, "app-shell AudioPolicy capture failed", t);
         }
+
+        throw new IllegalStateException(
+                "all AudioPolicy strategies failed: " + failures
+        );
+    }
+
+    private static void appendFailure(StringBuilder out, String stage, Throwable t) {
+        if (out.length() > 0) out.append(" | ");
+        out.append(stage)
+                .append("=")
+                .append(t.getClass().getSimpleName())
+                .append(":")
+                .append(String.valueOf(t.getMessage()));
     }
 
     @SuppressLint({"PrivateApi", "WrongConstant", "MissingPermission"})
@@ -533,7 +577,8 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             int channels,
             boolean keepPlayingOnDevice,
             int[] usages,
-            boolean enableVoiceCaptureBeforeBuild
+            boolean enableVoiceCaptureBeforeBuild,
+            boolean preferSystemContext
     ) throws Exception {
         Class<?> mixingRuleClass = Class.forName("android.media.audiopolicy.AudioMixingRule");
         Class<?> mixingRuleBuilderClass = Class.forName("android.media.audiopolicy.AudioMixingRule$Builder");
@@ -546,6 +591,13 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 .invoke(mixingRuleBuilder, mixRolePlayers);
 
         if (enableVoiceCaptureBeforeBuild) {
+            try {
+                mixingRuleBuilderClass
+                        .getMethod("allowPrivilegedPlaybackCapture", boolean.class)
+                        .invoke(mixingRuleBuilder, false);
+            } catch (Throwable ignored) {
+                // Hidden API availability differs across releases/OEMs.
+            }
             try {
                 mixingRuleBuilderClass
                         .getMethod("voiceCommunicationCaptureAllowed", boolean.class)
@@ -609,7 +661,9 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         Class<?> audioPolicyClass = Class.forName("android.media.audiopolicy.AudioPolicy");
         Class<?> audioPolicyBuilderClass = Class.forName("android.media.audiopolicy.AudioPolicy$Builder");
 
-        Context policyContext = createShellAudioContext(context);
+        Context policyContext = preferSystemContext
+                ? createSystemShellAudioContext(context)
+                : createShellAudioContext(context);
         Object audioPolicyBuilder = audioPolicyBuilderClass
                 .getConstructor(Context.class)
                 .newInstance(policyContext);
@@ -618,12 +672,30 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 .invoke(audioPolicyBuilder, audioMix);
         Object audioPolicy = audioPolicyBuilderClass.getMethod("build").invoke(audioPolicyBuilder);
 
-        Method register = AudioManager.class
-                .getDeclaredMethod("registerAudioPolicyStatic", audioPolicyClass);
-        register.setAccessible(true);
-        int result = (Integer) register.invoke(null, audioPolicy);
+        int result;
+        if (preferSystemContext) {
+            try {
+                Object audioManager = policyContext.getSystemService(AudioManager.class);
+                Method register = AudioManager.class.getMethod(
+                        "registerAudioPolicy",
+                        audioPolicyClass
+                );
+                result = (Integer) register.invoke(audioManager, audioPolicy);
+            } catch (Throwable instanceFailure) {
+                Log.w(TAG, "instance registerAudioPolicy unavailable; using static", instanceFailure);
+                Method register = AudioManager.class
+                        .getDeclaredMethod("registerAudioPolicyStatic", audioPolicyClass);
+                register.setAccessible(true);
+                result = (Integer) register.invoke(null, audioPolicy);
+            }
+        } else {
+            Method register = AudioManager.class
+                    .getDeclaredMethod("registerAudioPolicyStatic", audioPolicyClass);
+            register.setAccessible(true);
+            result = (Integer) register.invoke(null, audioPolicy);
+        }
         if (result != 0) {
-            throw new IllegalStateException("registerAudioPolicyStatic returned " + result);
+            throw new IllegalStateException("registerAudioPolicy returned " + result);
         }
 
         AudioRecord resultRecord = null;
@@ -697,6 +769,54 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             throw new IllegalStateException("REMOTE_SUBMIX AudioRecord is not initialized");
         }
         return record;
+    }
+
+    @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
+    private static Context createSystemShellAudioContext(Context fallback) {
+        try {
+            // Xiaomi/MIUI/HyperOS-specific framework hook seen in the same
+            // AudioPolicy path used by scrcpy-related implementations.
+            try {
+                Class<?> themeManagerStub = Class.forName("android.content.res.ThemeManagerStub");
+                Field resourceField = themeManagerStub.getDeclaredField("sResource");
+                resourceField.setAccessible(true);
+                resourceField.set(null, null);
+            } catch (Throwable ignored) {
+            }
+
+            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
+            Object activityThread = null;
+
+            try {
+                Method current = activityThreadClass.getDeclaredMethod("currentActivityThread");
+                current.setAccessible(true);
+                activityThread = current.invoke(null);
+            } catch (Throwable ignored) {
+            }
+
+            if (activityThread == null) {
+                Method systemMain = activityThreadClass.getDeclaredMethod("systemMain");
+                systemMain.setAccessible(true);
+                activityThread = systemMain.invoke(null);
+            }
+
+            Method getSystemContext = activityThreadClass.getDeclaredMethod("getSystemContext");
+            getSystemContext.setAccessible(true);
+            Context systemContext = (Context) getSystemContext.invoke(activityThread);
+
+            if (systemContext != null) {
+                Log.i(
+                        TAG,
+                        "using system Context for AudioPolicy basePackage=" +
+                                systemContext.getPackageName() +
+                                " uid=" + Process.myUid()
+                );
+                return createShellAudioContext(systemContext);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "could not create system shell Context; using UserService Context", t);
+        }
+        return createShellAudioContext(fallback);
     }
 
     private static Context createShellAudioContext(Context base) {
