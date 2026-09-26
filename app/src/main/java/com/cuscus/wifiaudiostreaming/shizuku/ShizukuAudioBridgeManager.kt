@@ -15,6 +15,7 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.RemoteException
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.cuscus.wifiaudiostreaming.NetworkManager
 import com.cuscus.wifiaudiostreaming.R
@@ -208,9 +209,10 @@ object ShizukuAudioBridgeManager {
 
     private fun begin(context: Context, config: Config) {
         if (!isBinderReady()) {
+            val detail = "Shizuku is not running. Start Shizuku, then return to WFAS."
             _state.value = State.WaitingForShizuku
-            NetworkManager.connectionStatus.value =
-                "Shizuku is not running. Start Shizuku, then return to WFAS."
+            NetworkManager.connectionStatus.value = detail
+            Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
             return
         }
 
@@ -234,6 +236,11 @@ object ShizukuAudioBridgeManager {
 
         _state.value = State.WaitingForPermission
         NetworkManager.connectionStatus.value = "Waiting for Shizuku permission"
+        Toast.makeText(
+            context,
+            "Please allow WFAS in the Shizuku permission dialog.",
+            Toast.LENGTH_LONG
+        ).show()
         runCatching { Shizuku.requestPermission(REQUEST_CODE_PERMISSION) }
             .onFailure { fail(context, "Cannot request Shizuku permission: ${it.message}") }
     }
@@ -314,6 +321,7 @@ object ShizukuAudioBridgeManager {
 
     private fun fail(context: Context, detail: String) {
         Log.e(TAG, detail)
+        Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
         NetworkManager.stopBroadcastingPresence()
         NetworkManager.isServerStreaming = false
         NetworkManager.isStreamingCurrent.value = false
