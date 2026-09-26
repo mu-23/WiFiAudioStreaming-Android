@@ -101,7 +101,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         }
 
         int frameSize = channels * 2;
-        int safePacketBytes = Math.max(128, Math.min(packetBytes, 1380));
+        int safePacketBytes = Math.max(128, Math.min(packetBytes, 1390));
         safePacketBytes -= safePacketBytes % frameSize;
         if (safePacketBytes < frameSize) safePacketBytes = frameSize;
 
