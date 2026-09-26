@@ -139,7 +139,9 @@ object ScriptExecutor {
             usbMode = command.bool(ScriptParams.USB) ?: settings.usbModeEnabled,
             usbLatencyMs = command.latency() ?: settings.usbLatencyMs,
             muteRender = settings.muteRender,
-            serverPersist = settings.serverPersist
+            // The sender survives all transport/client loss. Only an explicit
+            // Stop ends it; this keeps legacy MediaProjection and Shizuku aligned.
+            serverPersist = true
         )
     }
 
