@@ -21,6 +21,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.cuscus.wifiaudiostreaming.InternalAudioBackend
 import com.cuscus.wifiaudiostreaming.UsbLink
 import com.cuscus.wifiaudiostreaming.WfasPolicy
 import com.cuscus.wifiaudiostreaming.scripting.AutomationGate
@@ -119,6 +120,7 @@ val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(na
 data class AppSettings(
     val streamInternal: Boolean,
     val streamMic: Boolean,
+    val internalAudioBackend: String = InternalAudioBackend.SHIZUKU,
     val sampleRate: Int,
     val channelConfig: String,
     val bufferSize: Int,
@@ -197,6 +199,7 @@ class SettingsDataStore(context: Context) {
     private object PreferencesKeys {
         val STREAM_INTERNAL = booleanPreferencesKey("stream_internal")
         val STREAM_MIC = booleanPreferencesKey("stream_mic")
+        val INTERNAL_AUDIO_BACKEND = stringPreferencesKey("internal_audio_backend")
         val SAMPLE_RATE = intPreferencesKey("sample_rate")
         val CHANNEL_CONFIG = stringPreferencesKey("channel_config")
         val BUFFER_SIZE = intPreferencesKey("buffer_size")
@@ -337,6 +340,9 @@ class SettingsDataStore(context: Context) {
         AppSettings(
             streamInternal = preferences[PreferencesKeys.STREAM_INTERNAL] ?: true,
             streamMic = preferences[PreferencesKeys.STREAM_MIC] ?: false,
+            internalAudioBackend = InternalAudioBackend.normalize(
+                preferences[PreferencesKeys.INTERNAL_AUDIO_BACKEND]
+            ),
             sampleRate = preferences[PreferencesKeys.SAMPLE_RATE] ?: 48000,
             channelConfig = preferences[PreferencesKeys.CHANNEL_CONFIG] ?: "STEREO",
             bufferSize = preferences[PreferencesKeys.BUFFER_SIZE] ?: 512,
@@ -446,6 +452,13 @@ class SettingsDataStore(context: Context) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.STREAM_INTERNAL] = streamInternal
             preferences[PreferencesKeys.STREAM_MIC] = streamMic
+        }
+    }
+
+    suspend fun saveInternalAudioBackend(backend: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.INTERNAL_AUDIO_BACKEND] =
+                InternalAudioBackend.normalize(backend)
         }
     }
 
