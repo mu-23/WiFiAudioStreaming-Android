@@ -272,6 +272,12 @@ class AudioCaptureService : Service() {
         private const val UPDATE_THROTTLE_MS = 350L
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        StreamingActionReceiver.stopEverything(this)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         stopCapture()
         serviceScope.cancel()
