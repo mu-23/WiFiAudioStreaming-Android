@@ -28,6 +28,7 @@ object ShizukuAudioBridgeManager {
     private const val TAG = "WFAS_SHIZUKU_APP"
     private const val REQUEST_CODE_PERMISSION = 0x5746
     private const val USER_SERVICE_VERSION = 2
+    private const val RUNTIME_PREFS = "wfas_shizuku_runtime"
 
     data class Config(
         val port: Int,
@@ -61,6 +62,8 @@ object ShizukuAudioBridgeManager {
     private var bound = false
     @Volatile
     private var bindingInProgress = false
+    @Volatile
+    private var reattachingExisting = false
 
     private var appContext: Context? = null
     private var listenersInstalled = false
@@ -74,7 +77,17 @@ object ShizukuAudioBridgeManager {
             Log.i(TAG, "UserService connected: $name")
             val context = appContext ?: return
             val config = pendingConfig
-            if (desiredRunning && config != null) {
+            if (reattachingExisting) {
+                reattachingExisting = false
+                val detail = runCatching { service?.getStatus() }.getOrNull().orEmpty()
+                if (detail.startsWith("running") && config != null) {
+                    restoreRunningState(context, config, detail)
+                } else if (desiredRunning && config != null) {
+                    startRemote(context, config)
+                } else {
+                    _state.value = State.Idle
+                }
+            } else if (desiredRunning && config != null) {
                 startRemote(context, config)
             } else {
                 runCatching { service?.getStatus() }
@@ -155,6 +168,7 @@ object ShizukuAudioBridgeManager {
         appContext = app
         desiredRunning = true
         pendingConfig = config
+        saveDesiredConfig(app, config)
         ensureListeners()
         begin(app, config)
     }
@@ -164,6 +178,8 @@ object ShizukuAudioBridgeManager {
         val oldConfig = pendingConfig
         desiredRunning = false
         pendingConfig = null
+        reattachingExisting = false
+        clearDesiredConfig(app)
         reconnectHandler.removeCallbacks(rebindRunnable)
 
         NetworkManager.stopBroadcastingPresence()
@@ -197,18 +213,31 @@ object ShizukuAudioBridgeManager {
     fun rebindExisting(context: Context) {
         val app = context.applicationContext
         appContext = app
+        if (!desiredRunning || pendingConfig == null) {
+            restoreDesiredConfig(app)?.let { restored ->
+                desiredRunning = true
+                pendingConfig = restored
+                Log.i(TAG, "restored Shizuku bridge intent after app-process recreation")
+            }
+        }
         ensureListeners()
         if (!isBinderReady()) return
         if (bound || bindingInProgress) return
 
         runCatching {
+            reattachingExisting = true
             val version = Shizuku.peekUserService(userServiceArgs(app), serviceConnection)
             if (version >= 0) {
                 bindingInProgress = true
                 Log.i(TAG, "reattaching to existing UserService version=$version")
+            } else {
+                reattachingExisting = false
+                pendingConfig?.takeIf { desiredRunning }?.let { begin(app, it) }
             }
         }.onFailure {
+            reattachingExisting = false
             Log.w(TAG, "peekUserService failed", it)
+            pendingConfig?.takeIf { desiredRunning }?.let { begin(app, it) }
         }
     }
 
@@ -336,6 +365,65 @@ object ShizukuAudioBridgeManager {
         val hostIntent = Intent(context, ShizukuBridgeHostService::class.java)
         ContextCompat.startForegroundService(context, hostIntent)
         Log.i(TAG, "bridge started: $detail")
+    }
+
+    private fun restoreRunningState(context: Context, config: Config, detail: String) {
+        NetworkManager.configureSecurity("OFF", "", false)
+        NetworkManager.serverStreamsMic = false
+        NetworkManager.startBroadcastingPresence(
+            context = context,
+            isMulticast = false,
+            streamingPort = config.port,
+            networkInterfaceName = config.networkInterfaceName,
+            rtpEnabled = false,
+            audioFormat = StreamAudioFormat(
+                sampleRate = config.sampleRate,
+                channels = config.channels,
+                bitDepth = 16
+            )
+        )
+        NetworkManager.isServerStreaming = true
+        NetworkManager.isStreamingCurrent.value = true
+        NetworkManager.connectionStatus.value = detail
+        _state.value = State.Running(detail)
+        Log.i(TAG, "reattached to running bridge without restarting capture: $detail")
+    }
+
+    private fun saveDesiredConfig(context: Context, config: Config) {
+        context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("desired", true)
+            .putInt("port", config.port)
+            .putInt("sample_rate", config.sampleRate)
+            .putInt("channels", config.channels)
+            .putInt("packet_bytes", config.packetBytes)
+            .putBoolean("keep_playing", config.keepPlayingOnDevice)
+            .putString("network_interface", config.networkInterfaceName)
+            .putBoolean("persist_after_client", config.persistAfterClient)
+            .apply()
+    }
+
+    private fun restoreDesiredConfig(context: Context): Config? {
+        val prefs = context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("desired", false)) return null
+        val port = prefs.getInt("port", 0)
+        if (port !in 1024..65535) return null
+        return Config(
+            port = port,
+            sampleRate = prefs.getInt("sample_rate", 48_000),
+            channels = prefs.getInt("channels", 2).coerceIn(1, 2),
+            packetBytes = prefs.getInt("packet_bytes", 512),
+            keepPlayingOnDevice = prefs.getBoolean("keep_playing", true),
+            networkInterfaceName = prefs.getString("network_interface", "Auto") ?: "Auto",
+            persistAfterClient = prefs.getBoolean("persist_after_client", false)
+        )
+    }
+
+    private fun clearDesiredConfig(context: Context) {
+        context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
     }
 
     private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
