@@ -104,11 +104,6 @@ object ClientSessionController {
         if (restoreJob?.isActive == true) return
         restoreJob = scope.launch {
             val currentSettings = SettingsDataStore(app).settingsFlow.first()
-            if (!currentSettings.clientPersistentConnection) {
-                clearDesiredTarget(app)
-                return@launch
-            }
-
             val restored = restoreDesiredTarget(app) ?: return@launch
             if (desiredConnected || attemptInFlight || reconnectJob?.isActive == true) return@launch
 
@@ -166,11 +161,9 @@ object ClientSessionController {
                 return@launch
             }
 
-            if (currentSettings.clientPersistentConnection) {
-                saveDesiredTarget(context, serverInfo)
-            } else {
-                clearDesiredTarget(context)
-            }
+            // A manual connect expresses a durable intent. Transport loss never
+            // ends the logical session; only userDisconnect() does.
+            saveDesiredTarget(context, serverInfo)
 
             NetworkManager.configureSecurity(
                 currentSettings.securityMode,
@@ -218,25 +211,8 @@ object ClientSessionController {
                         val latestSettings = SettingsDataStore(context).settingsFlow.first()
                         if (!desiredConnected || token != generation) return@launch
 
-                        if (!latestSettings.clientPersistentConnection) {
-                            desiredConnected = false
-                            desiredTarget = null
-                            generation += 1
-                            reconnectAttempt = 0
-                            reconnectJob?.cancel()
-                            reconnectJob = null
-                            statusJob?.cancel()
-                            statusJob = null
-                            clearDesiredTarget(context)
-                            if (reconnectOwnsDiscovery) {
-                                NetworkManager.stopListeningForDevices()
-                                reconnectOwnsDiscovery = false
-                            }
-                            context.stopService(Intent(context, ClientService::class.java))
-                            Log.i(TAG, "transport session ended; keep-connected preference is off")
-                            return@launch
-                        }
-
+                        // Transport loss is recoverable by definition. Keep the
+                        // logical session alive until the user explicitly disconnects.
                         ensureReconnectDiscovery(context, latestSettings.networkInterface)
                         val refreshedTarget = refreshReconnectTarget(serverInfo)
                         desiredTarget = refreshedTarget
