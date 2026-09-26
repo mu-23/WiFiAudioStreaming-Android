@@ -511,11 +511,12 @@ class MainActivity : AppCompatActivity() {
                 this,
                 ShizukuAudioBridgeManager.Config(
                     port = params.streamingPort,
-                    sampleRate = 48_000,
-                    channels = 2,
-                    packetBytes = 512,
+                    sampleRate = params.sampleRate,
+                    channels = if (params.channelConfig.equals("STEREO", ignoreCase = true)) 2 else 1,
+                    packetBytes = settings?.maxPayloadBytes ?: 512,
                     keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
-                    networkInterfaceName = params.networkInterface
+                    networkInterfaceName = params.networkInterface,
+                    persistAfterClient = params.serverPersist
                 )
             )
             pendingServerParams = null
