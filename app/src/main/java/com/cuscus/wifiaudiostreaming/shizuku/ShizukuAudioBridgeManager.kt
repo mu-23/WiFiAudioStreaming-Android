@@ -97,7 +97,7 @@ object ShizukuAudioBridgeManager {
             Log.w(TAG, "UserService disconnected: $name")
             if (desiredRunning) {
                 _state.value = State.WaitingForShizuku
-                NetworkManager.connectionStatus.value = "Shizuku audio bridge disconnected; waiting for Shizuku"
+                NetworkManager.connectionStatus.value = appContext?.getString(R.string.shizuku_status_disconnected_waiting) ?: "Shizuku audio bridge disconnected; waiting for Shizuku"
             }
         }
     }
@@ -138,8 +138,7 @@ object ShizukuAudioBridgeManager {
         }
         if (desiredRunning) {
             _state.value = State.WaitingForShizuku
-            NetworkManager.connectionStatus.value =
-                "Shizuku stopped; connection intent kept. Restart Shizuku to resume."
+            NetworkManager.connectionStatus.value = context.getString(R.string.shizuku_status_stopped_resume)
         }
     }
 
@@ -209,7 +208,7 @@ object ShizukuAudioBridgeManager {
 
     private fun begin(context: Context, config: Config) {
         if (!isBinderReady()) {
-            val detail = "Shizuku is not running. Start Shizuku, then return to WFAS."
+            val detail = context.getString(R.string.shizuku_status_not_running)
             _state.value = State.WaitingForShizuku
             NetworkManager.connectionStatus.value = detail
             Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
@@ -228,7 +227,7 @@ object ShizukuAudioBridgeManager {
 
         val version = runCatching { Shizuku.getVersion() }.getOrDefault(0)
         if (version < 13) {
-            fail(context, "Shizuku v13+ is required for the AudioPolicy bridge")
+            fail(context, context.getString(R.string.shizuku_status_version_required))
             return
         }
 
@@ -240,19 +239,19 @@ object ShizukuAudioBridgeManager {
         }
 
         if (runCatching { Shizuku.shouldShowRequestPermissionRationale() }.getOrDefault(false)) {
-            fail(context, "Shizuku permission was denied. Grant WFAS access in Shizuku.")
+            fail(context, context.getString(R.string.shizuku_status_permission_denied))
             return
         }
 
         _state.value = State.WaitingForPermission
-        NetworkManager.connectionStatus.value = "Waiting for Shizuku permission"
+        NetworkManager.connectionStatus.value = context.getString(R.string.shizuku_status_waiting_permission)
         Toast.makeText(
             context,
-            "Please allow WFAS in the Shizuku permission dialog.",
+            context.getString(R.string.shizuku_prompt_allow_permission),
             Toast.LENGTH_LONG
         ).show()
         runCatching { Shizuku.requestPermission(REQUEST_CODE_PERMISSION) }
-            .onFailure { fail(context, "Cannot request Shizuku permission: ${it.message}") }
+            .onFailure { fail(context, context.getString(R.string.shizuku_error_request_permission, it.message ?: "unknown")) }
     }
 
     private fun bindAndStart(context: Context, config: Config) {
@@ -266,14 +265,14 @@ object ShizukuAudioBridgeManager {
         if (bindingInProgress) return
 
         _state.value = State.Binding
-        NetworkManager.connectionStatus.value = "Starting Shizuku audio bridge"
+        NetworkManager.connectionStatus.value = context.getString(R.string.shizuku_status_starting_bridge)
         bindingInProgress = true
         runCatching {
             Shizuku.bindUserService(userServiceArgs(context), serviceConnection)
         }.onFailure {
             bindingInProgress = false
             bound = false
-            fail(context, "Cannot bind Shizuku UserService: ${it.message}")
+            fail(context, context.getString(R.string.shizuku_error_bind_service, it.message ?: "unknown"))
         }
     }
 
@@ -290,10 +289,10 @@ object ShizukuAudioBridgeManager {
                 config.keepPlayingOnDevice
             )
         } catch (e: RemoteException) {
-            fail(context, "Shizuku UserService call failed: ${e.message}")
+            fail(context, context.getString(R.string.shizuku_error_remote_call, e.message ?: "unknown"))
             return
         } catch (t: Throwable) {
-            fail(context, "Shizuku bridge start failed: ${t.message}")
+            fail(context, context.getString(R.string.shizuku_error_bridge_start, t.message ?: "unknown"))
             return
         }
 
