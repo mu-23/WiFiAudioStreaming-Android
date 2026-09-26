@@ -2444,6 +2444,7 @@ object NetworkManager {
                         lastAudioAt.set(connectedAt)
                         lastServerActivityAt.set(connectedAt)
                         val serverActivityTimeoutMs = 3000L
+                        val audioActivityTimeoutMs = 5000L
 
                         val MAGIC_0: Byte = 0x57
                         val MAGIC_1: Byte = 0x46
@@ -2459,6 +2460,12 @@ object NetworkManager {
                             while (isActive) {
                                 delay(1000)
                                 val now = System.currentTimeMillis()
+                                if (now - lastAudioAt.get() > audioActivityTimeoutMs) {
+                                    markDisconnect("AUDIO_ACTIVITY_TIMEOUT")
+                                    if (disconnectionSoundEnabled && !ClientSessionController.wantsConnection()) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
+                                    streamingJob?.cancel()
+                                    break
+                                }
                                 if (now - lastServerActivityAt.get() > serverActivityTimeoutMs) {
                                     markDisconnect("SERVER_ACTIVITY_TIMEOUT")
                                     if (disconnectionSoundEnabled && !ClientSessionController.wantsConnection()) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
