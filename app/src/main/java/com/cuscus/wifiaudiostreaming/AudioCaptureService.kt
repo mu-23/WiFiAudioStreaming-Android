@@ -41,12 +41,13 @@ class AudioCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                acquireLocks()
-                startForegroundWithNotification()
-                serviceScope.launch { updateWidgetState(this@AudioCaptureService, true, true) }
-
                 val streamInternal = intent.getBooleanExtra(EXTRA_STREAM_INTERNAL, false)
                 val streamMic = intent.getBooleanExtra(EXTRA_STREAM_MIC, false)
+
+                acquireLocks()
+                startForegroundWithNotification(streamInternal, streamMic)
+                serviceScope.launch { updateWidgetState(this@AudioCaptureService, true, true) }
+
                 val sampleRate = intent.getIntExtra("sample_rate", 48000)
                 val channelConfig = intent.getStringExtra("channel_config") ?: "STEREO"
                 val bufferSize = intent.getIntExtra("buffer_size", 6144)
@@ -202,16 +203,27 @@ class AudioCaptureService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun startForegroundWithNotification() {
+    private fun startForegroundWithNotification(
+        streamInternal: Boolean,
+        streamMic: Boolean
+    ) {
         NotificationCenter.ensureChannels(this)
 
         val initial = buildNotification(getString(R.string.notif_starting))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NotificationCenter.ID_SERVER,
-                initial,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
+            var serviceTypes = 0
+            if (streamInternal) {
+                serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            }
+            if (streamMic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                serviceTypes = serviceTypes or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            }
+
+            if (serviceTypes != 0) {
+                startForeground(NotificationCenter.ID_SERVER, initial, serviceTypes)
+            } else {
+                startForeground(NotificationCenter.ID_SERVER, initial)
+            }
         } else {
             startForeground(NotificationCenter.ID_SERVER, initial)
         }
