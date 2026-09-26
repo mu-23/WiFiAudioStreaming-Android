@@ -35,7 +35,8 @@ object ShizukuAudioBridgeManager {
         val channels: Int = 2,
         val packetBytes: Int = 512,
         val keepPlayingOnDevice: Boolean = true,
-        val networkInterfaceName: String = "Auto"
+        val networkInterfaceName: String = "Auto",
+        val persistAfterClient: Boolean = false
     )
 
     sealed class State {
@@ -69,6 +70,7 @@ object ShizukuAudioBridgeManager {
             service = IShizukuAudioBridge.Stub.asInterface(binder)
             bindingInProgress = false
             bound = true
+            reconnectHandler.removeCallbacks(rebindRunnable)
             Log.i(TAG, "UserService connected: $name")
             val context = appContext ?: return
             val config = pendingConfig
@@ -96,8 +98,12 @@ object ShizukuAudioBridgeManager {
             bound = false
             Log.w(TAG, "UserService disconnected: $name")
             if (desiredRunning) {
+                val context = appContext
+                val detail = context?.getString(R.string.shizuku_status_disconnected_waiting)
+                    ?: "Shizuku audio bridge disconnected; waiting for Shizuku"
+                markBridgeUnavailable(context, detail)
                 _state.value = State.WaitingForShizuku
-                NetworkManager.connectionStatus.value = appContext?.getString(R.string.shizuku_status_disconnected_waiting) ?: "Shizuku audio bridge disconnected; waiting for Shizuku"
+                scheduleUserServiceReconnect()
             }
         }
     }
@@ -137,8 +143,10 @@ object ShizukuAudioBridgeManager {
             )
         }
         if (desiredRunning) {
+            val detail = context?.getString(R.string.shizuku_status_stopped_resume)
+                ?: "Shizuku stopped; connection intent kept. Restart Shizuku to resume."
+            markBridgeUnavailable(context, detail)
             _state.value = State.WaitingForShizuku
-            NetworkManager.connectionStatus.value = context?.getString(R.string.shizuku_status_stopped_resume) ?: "Shizuku stopped; connection intent kept. Restart Shizuku to resume."
         }
     }
 
@@ -156,6 +164,7 @@ object ShizukuAudioBridgeManager {
         val oldConfig = pendingConfig
         desiredRunning = false
         pendingConfig = null
+        reconnectHandler.removeCallbacks(rebindRunnable)
 
         NetworkManager.stopBroadcastingPresence()
         NetworkManager.announceServerGone(
@@ -286,7 +295,8 @@ object ShizukuAudioBridgeManager {
                 config.sampleRate,
                 config.channels,
                 config.packetBytes,
-                config.keepPlayingOnDevice
+                config.keepPlayingOnDevice,
+                config.persistAfterClient
             )
         } catch (e: RemoteException) {
             fail(context, context.getString(R.string.shizuku_error_remote_call, e.message ?: "unknown"))
@@ -326,6 +336,32 @@ object ShizukuAudioBridgeManager {
         val hostIntent = Intent(context, ShizukuBridgeHostService::class.java)
         ContextCompat.startForegroundService(context, hostIntent)
         Log.i(TAG, "bridge started: $detail")
+    }
+
+    private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val rebindRunnable = Runnable {
+        val context = appContext ?: return@Runnable
+        val config = pendingConfig ?: return@Runnable
+        if (!desiredRunning || bound || bindingInProgress || !isBinderReady()) return@Runnable
+        bindAndStart(context, config)
+    }
+
+    private fun scheduleUserServiceReconnect() {
+        reconnectHandler.removeCallbacks(rebindRunnable)
+        reconnectHandler.postDelayed(rebindRunnable, 1_000L)
+    }
+
+    private fun markBridgeUnavailable(context: Context?, detail: String) {
+        NetworkManager.stopBroadcastingPresence()
+        if (context != null) {
+            NetworkManager.announceServerGone(
+                context,
+                pendingConfig?.networkInterfaceName ?: "Auto"
+            )
+        }
+        NetworkManager.isServerStreaming = false
+        NetworkManager.isStreamingCurrent.value = false
+        NetworkManager.connectionStatus.value = detail
     }
 
     private fun fail(context: Context, detail: String) {
