@@ -1013,14 +1013,25 @@ private fun StateHero(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(8.dp))
+                    val idleStatus = stringResource(R.string.status_idle)
+                    val readyDetail =
+                        if (connectionStatus.isBlank() || connectionStatus == idleStatus) {
+                            localIp
+                        } else {
+                            connectionStatus
+                        }
                     Text(
                         text = when (p) {
-                            HeroPhase.Ready -> localIp
+                            HeroPhase.Ready -> readyDetail
                             HeroPhase.Searching -> stringResource(R.string.find_device_text)
                             else -> connectionStatus
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = if (p == HeroPhase.Ready) FontFamily.Monospace else FontFamily.Default,
+                        fontFamily = if (p == HeroPhase.Ready && readyDetail == localIp) {
+                            FontFamily.Monospace
+                        } else {
+                            FontFamily.Default
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
