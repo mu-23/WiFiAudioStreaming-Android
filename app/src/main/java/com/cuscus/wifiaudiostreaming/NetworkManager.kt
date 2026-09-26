@@ -2461,7 +2461,7 @@ object NetworkManager {
                                 val now = System.currentTimeMillis()
                                 if (now - lastServerActivityAt.get() > serverActivityTimeoutMs) {
                                     markDisconnect("SERVER_ACTIVITY_TIMEOUT")
-                                    if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
+                                    if (disconnectionSoundEnabled && !ClientSessionController.wantsConnection()) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
                                     streamingJob?.cancel()
                                     break
                                 }
@@ -2827,7 +2827,7 @@ object NetworkManager {
                                     markDisconnect("MULTICAST_SILENCE_TIMEOUT", "lastRxAgeMs=${System.currentTimeMillis() - mcLastRxAt}")
                                     connectionStatus.value =
                                         context.getString(R.string.status_server_disconnected)
-                                    if (disconnectionSoundEnabled) {
+                                    if (disconnectionSoundEnabled && !ClientSessionController.wantsConnection()) {
                                         playDisconnectionSound(context)
                                         disconnectionSoundPlayed = true
                                     }
@@ -3096,7 +3096,11 @@ object NetworkManager {
                 micStreamingJob?.cancel()
                 micStreamingJob = null
                 isMicMuted.value = false
-                if (connectedSuccessfully && !disconnectionSoundPlayed && disconnectionSoundEnabled) {
+                if (connectedSuccessfully &&
+                    !disconnectionSoundPlayed &&
+                    disconnectionSoundEnabled &&
+                    !ClientSessionController.wantsConnection()
+                ) {
                     playDisconnectionSound(context)
                 }
                 if (isStreamingCurrent.value) {
