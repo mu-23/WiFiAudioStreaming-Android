@@ -47,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        aidl = true
     }
     packaging {
         resources {
@@ -56,6 +57,10 @@ android {
 }
 
 dependencies {
+
+    // Lab-only privileged audio path. UserService runs our code as Android shell (uid 2000).
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.core.ktx)
