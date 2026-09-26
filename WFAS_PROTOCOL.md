@@ -115,9 +115,11 @@ capabilities, while version compatibility is decided at connection time
 | `HELLO_ACK;v=<n>`              | server → client  | Accept, carrying server version.          |
 | `WFAS_INCOMPATIBLE;v=<n>`      | server → client  | Reject: version mismatch, server is `<n>`.|
 | `WFAS_BUSY`                    | server → client  | Reject: the unicast session is already taken (Section 5.6). |
-| `PING`                         | server → client  | Keep‑alive (every 1 s; 3 s timeout).      |
+| `PING`                         | server → client  | Explicit keep‑alive (every 1 s). A unicast client tears down after 3 s with neither PING nor a validated audio packet from the active server. |
 | `BYE`                          | server → client  | Server stopping / client gone.            |
 | `CLIENT_BYE`                   | client → server  | Client disconnecting cleanly.             |
+
+For unicast liveness, validated audio traffic also proves that the server is alive. This is a receiver-side robustness rule only: it does not change the wire format or control-message cadence, and therefore does not require a protocol-version bump. Invalid, incompatible, or failed-authentication audio packets do not refresh liveness.
 
 `WFAS_BUSY` is an optional, additive rejection (added in the v2 line, no version
 bump — see Section 6): a server that does not implement it simply stays silent
