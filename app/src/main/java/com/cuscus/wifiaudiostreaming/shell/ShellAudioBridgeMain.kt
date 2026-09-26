@@ -23,6 +23,7 @@ import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.math.max
@@ -165,6 +166,41 @@ object ShellAudioBridgeMain {
         val client = AtomicReference(initialClient)
         val clientIp: InetAddress = initialClient.address
 
+        // AudioRecord(REMOTE_SUBMIX) may block when no app is producing audio.
+        // Keep a tiny WFAS silence heartbeat independent from that blocking read:
+        // the existing client treats validated silence packets as server activity,
+        // so screen-off power saving cannot turn an otherwise healthy idle stream
+        // into a false 3-second activity timeout.
+        val packetStateLock = Any()
+        var seq = 0
+        var samplePosition = 0L
+        val lastRealAudioPacketAt = AtomicLong(System.currentTimeMillis())
+        val lastSilenceKeepaliveAt = AtomicLong(0L)
+        val silenceKeepaliveActive = AtomicBoolean(false)
+
+        fun sendWfasPacket(payload: ByteArray?, payloadLength: Int, silence: Boolean, advanceFrames: Long) {
+            synchronized(packetStateLock) {
+                val out = ByteArray(HEADER_SIZE + if (silence) 0 else payloadLength)
+                out[0] = MAGIC_0
+                out[1] = MAGIC_1
+                out[2] = PROTOCOL_VERSION.toByte()
+                out[3] = if (silence) 0x01 else 0x00
+                out[4] = ((seq ushr 8) and 0xFF).toByte()
+                out[5] = (seq and 0xFF).toByte()
+                ByteBuffer.wrap(out, 6, 4)
+                    .order(ByteOrder.BIG_ENDIAN)
+                    .putInt((samplePosition and 0xFFFFFFFFL).toInt())
+                if (!silence && payload != null && payloadLength > 0) {
+                    System.arraycopy(payload, 0, out, HEADER_SIZE, payloadLength)
+                }
+
+                val target = client.get()
+                socket.send(DatagramPacket(out, out.size, target.address, target.port))
+                seq = (seq + 1) and 0xFFFF
+                samplePosition += advanceFrames
+            }
+        }
+
         val controlThread = thread(name = "wfas-shell-control", isDaemon = true) {
             val buf = ByteArray(2048)
             while (alive.get()) {
@@ -222,9 +258,36 @@ object ShellAudioBridgeMain {
             }
         }
 
+        val idleKeepaliveThread = thread(name = "wfas-shell-idle-keepalive", isDaemon = true) {
+            val keepaliveEveryMs = 100L
+            val silenceFrames = (config.sampleRate * keepaliveEveryMs / 1000L).coerceAtLeast(1L)
+            while (alive.get()) {
+                try {
+                    Thread.sleep(25)
+                    val now = System.currentTimeMillis()
+                    if (now - lastRealAudioPacketAt.get() >= keepaliveEveryMs &&
+                        now - lastSilenceKeepaliveAt.get() >= keepaliveEveryMs
+                    ) {
+                        sendWfasPacket(
+                            payload = null,
+                            payloadLength = 0,
+                            silence = true,
+                            advanceFrames = silenceFrames
+                        )
+                        lastSilenceKeepaliveAt.set(now)
+                        if (silenceKeepaliveActive.compareAndSet(false, true)) {
+                            println("[WFAS-SHELL] source idle; sending 100ms silence keepalive packets")
+                        }
+                    }
+                } catch (t: Throwable) {
+                    if (alive.get()) {
+                        System.err.println("[WFAS-SHELL] idle keepalive failed: ${t.message}")
+                    }
+                }
+            }
+        }
+
         val pcm = ByteArray(packetBytes)
-        var seq = 0
-        var samplePosition = 0L
         var packets = 0L
 
         try {
@@ -245,26 +308,20 @@ object ShellAudioBridgeMain {
                 val aligned = read - (read % frameSize)
                 if (aligned <= 0) continue
 
-                val out = ByteArray(HEADER_SIZE + aligned)
-                out[0] = MAGIC_0
-                out[1] = MAGIC_1
-                out[2] = PROTOCOL_VERSION.toByte()
-                out[3] = 0
-                out[4] = ((seq ushr 8) and 0xFF).toByte()
-                out[5] = (seq and 0xFF).toByte()
-                ByteBuffer.wrap(out, 6, 4)
-                    .order(ByteOrder.BIG_ENDIAN)
-                    .putInt((samplePosition and 0xFFFFFFFFL).toInt())
-                System.arraycopy(pcm, 0, out, HEADER_SIZE, aligned)
+                lastRealAudioPacketAt.set(System.currentTimeMillis())
+                if (silenceKeepaliveActive.getAndSet(false)) {
+                    println("[WFAS-SHELL] audio resumed; idle silence keepalive stopped")
+                }
+                sendWfasPacket(
+                    payload = pcm,
+                    payloadLength = aligned,
+                    silence = false,
+                    advanceFrames = (aligned / frameSize).toLong()
+                )
 
-                val target = client.get()
-                socket.send(DatagramPacket(out, out.size, target.address, target.port))
-
-                seq = (seq + 1) and 0xFFFF
-                samplePosition += aligned / frameSize
                 packets++
                 if (packets == 1L || packets % 2000L == 0L) {
-                    println("[WFAS-SHELL] sent packets=$packets seq=$seq target=$target")
+                    println("[WFAS-SHELL] sent audio packets=$packets seq=$seq target=${client.get()}")
                 }
             }
         } finally {
@@ -273,6 +330,7 @@ object ShellAudioBridgeMain {
             recorder.release()
             runCatching { controlThread.join(1000) }
             runCatching { pingThread.join(1000) }
+            runCatching { idleKeepaliveThread.join(1000) }
         }
     }
 
