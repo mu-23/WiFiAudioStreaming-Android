@@ -933,7 +933,8 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                     .build();
 
             try {
-                Context c = context != null ? context : createSystemShellAudioContext(context);
+                Context c = createSystemShellAudioContext(context);
+                if (c == null) c = context;
                 if (c != null) {
                     AudioManager audioManager = c.getSystemService(AudioManager.class);
                     if (audioManager != null) {
