@@ -1547,6 +1547,18 @@ private fun LiveControls(
                 accent = accent,
                 modifier = Modifier.fillMaxWidth()
             )
+        } else {
+            val volume by NetworkManager.clientVolume.collectAsState()
+            ExpressiveVolumeSlider(
+                volume = volume,
+                onVolumeChange = { NetworkManager.setClientVolume(it) },
+                accent = accent,
+                modifier = Modifier.fillMaxWidth(),
+                showPresets = false,
+                maxVolume = 1f,
+                title = stringResource(R.string.playback_volume_card_title),
+                subtitle = stringResource(R.string.playback_volume_hint)
+            )
         }
     }
 }
