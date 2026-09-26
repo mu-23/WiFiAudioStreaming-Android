@@ -1,14 +1,14 @@
 # Chinese APK manual build trigger
 
-This file exists only to start a fresh Chinese APK build on branch `zh-v1.2`
+This file exists only to start a fresh Chinese APK build on branch `main`
 without touching the default `master` branch.
 
 To force a new build from the GitHub web UI:
 
-1. Open this file on branch `zh-v1.2`.
+1. Open this file on branch `main`.
 2. Click the pencil icon (Edit this file).
 3. Change the value below to any new text, such as the current date/time or a number.
-4. Commit directly to `zh-v1.2`.
+4. Commit directly to `main`.
 
 The commit will trigger the "Build Chinese APK" workflow and produce a fresh
 permanently signed APK with a new CI versionCode.
