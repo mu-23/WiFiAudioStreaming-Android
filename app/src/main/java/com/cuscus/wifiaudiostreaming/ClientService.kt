@@ -20,6 +20,8 @@ package com.cuscus.wifiaudiostreaming
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.widget.Toast
@@ -30,6 +32,7 @@ class ClientService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -47,10 +50,11 @@ class ClientService : Service() {
             NotificationCenter.clientNotification(this, getString(R.string.notif_connecting))
         )
 
-        // Keep the CPU awake while WFAS is actively receiving, matching the
-        // RTP and Snapcast client services. Without this, some Android devices
-        // throttle the receiver aggressively when the screen turns off.
-        acquireWakeLock()
+        // Keep both CPU and Wi-Fi fully awake while WFAS is receiving. Several
+        // Android devices aggressively power-save Wi-Fi after screen-off even
+        // while a foreground media service is alive, which shows up as UDP loss
+        // and random disconnects.
+        acquireLocks()
 
         serviceScope.launch {
             NetworkManager.connectionStatus
@@ -70,15 +74,32 @@ class ClientService : Service() {
         return START_STICKY
     }
 
-    private fun acquireWakeLock() {
-        if (wakeLock != null) return
-        wakeLock = runCatching {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "wfas:client").apply {
-                setReferenceCounted(false)
-                acquire(WAKE_LOCK_TIMEOUT_MS)
-            }
-        }.getOrNull()
+    @Suppress("DEPRECATION")
+    private fun acquireLocks() {
+        if (wakeLock?.isHeld != true) {
+            wakeLock = runCatching {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "wfas:client").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+        }
+
+        if (wifiLock?.isHeld != true) {
+            wifiLock = runCatching {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val lockMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                wifiManager.createWifiLock(lockMode, "wfas:client-wifi").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }.getOrNull()
+        }
     }
 
     override fun onDestroy() {
@@ -86,7 +107,9 @@ class ClientService : Service() {
             updateWidgetState(this@ClientService, false, false)
         }
         runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
         wakeLock = null
+        wifiLock = null
         serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         NotificationCenter.cancel(this, NotificationCenter.ID_CLIENT)
@@ -95,6 +118,5 @@ class ClientService : Service() {
 
     private companion object {
         const val UPDATE_THROTTLE_MS = 350L
-        const val WAKE_LOCK_TIMEOUT_MS = 8L * 60L * 60L * 1000L
     }
 }
