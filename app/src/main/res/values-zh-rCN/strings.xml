@@ -184,8 +184,8 @@
     <string name="settings_group_server_protocols">服务器协议</string>
     <string name="settings_item_wfas_title">WFAS（原生）</string>
     <string name="settings_item_wfas_desc">移动端和桌面端应用使用的低延迟自定义协议。</string>
-    <string name="settings_item_persist_title">断开后保持服务器运行</string>
-    <string name="settings_item_persist_desc">在单播模式下，客户端离开只结束当前会话，不会停止服务器；端口会继续保持开启并等待下一个客户端。多播本来就是这种行为。</string>
+    <string name="settings_item_persist_title">发送端始终保持运行</string>
+    <string name="settings_item_persist_desc">始终开启。网络中断、静音或接收端暂时消失都不会停止发送端，只有你手动点击“停止”才会结束服务器。</string>
     <string name="settings_item_rtp_title">RTP/PCM 串流</string>
     <string name="settings_item_rtp_desc">VLC、Kodi、FFplay 等支持的标准协议。</string>
     <string name="settings_item_http_title">HTTP 网页串流</string>
@@ -745,7 +745,7 @@
     <string name="shizuku_mic_mix_not_ready">Shizuku 后端暂未支持麦克风混音，本次会话只发送内部音频。</string>
     <string name="select_audio_source_first">启动服务器前请先选择一个音频源。</string>
 
-    <string name="settings_item_keep_connected_title">保持接收端连接</string>
+    <string name="settings_item_keep_connected_title">接收端始终保持连接</string>
     <string name="settings_item_keep_connected_desc">Wi‑Fi 中断、超时或发送端重启后持续自动重连，直到你手动点击“断开”。</string>
     <string name="settings_group_updates">更新</string>
     <string name="settings_item_auto_update_title">自动检查更新</string>
