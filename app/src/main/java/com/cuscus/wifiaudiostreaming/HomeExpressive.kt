@@ -246,7 +246,6 @@ fun ExpressiveHomeScreen(
     val shizukuLabStartCandidate =
         isServer &&
             appSettings.streamInternal &&
-            !appSettings.streamMic &&
             !isMulticastMode &&
             !appSettings.rtpEnabled &&
             !appSettings.httpEnabled &&
