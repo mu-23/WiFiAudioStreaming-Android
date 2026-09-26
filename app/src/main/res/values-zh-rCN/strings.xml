@@ -773,4 +773,18 @@
     <string name="update_dialog_later">稍后</string>
     <string name="update_dialog_close">关闭</string>
 
+    <string name="shizuku_status_disconnected_waiting">Shizuku 音频桥已断开，正在等待 Shizuku</string>
+    <string name="shizuku_status_stopped_resume">Shizuku 已停止，但连接意图会保留。重新启动 Shizuku 后会继续恢复。</string>
+    <string name="shizuku_status_not_running">Shizuku 尚未运行。请先启动 Shizuku，然后返回 WFAS。</string>
+    <string name="shizuku_status_version_required">AudioPolicy 音频桥需要 Shizuku v13 或更高版本。</string>
+    <string name="shizuku_status_permission_denied">Shizuku 权限已被拒绝。请在 Shizuku 中授予 WFAS 权限。</string>
+    <string name="shizuku_status_waiting_permission">正在等待 Shizuku 授权</string>
+    <string name="shizuku_prompt_allow_permission">请在 Shizuku 的授权弹窗中允许 WFAS。</string>
+    <string name="shizuku_error_request_permission">无法请求 Shizuku 权限：%1$s</string>
+    <string name="shizuku_status_starting_bridge">正在启动 Shizuku 音频桥</string>
+    <string name="shizuku_error_bind_service">无法连接 Shizuku UserService：%1$s</string>
+    <string name="shizuku_error_remote_call">Shizuku UserService 调用失败：%1$s</string>
+    <string name="shizuku_error_bridge_start">Shizuku 音频桥启动失败：%1$s</string>
+    <string name="shizuku_bridge_active">Shizuku 音频桥正在运行</string>
+
 </resources>
