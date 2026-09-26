@@ -1,191 +1,321 @@
 <div align="center">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/icon.png?raw=true" alt="WiFi Audio Streaming Icon" width="120" />
-  <h1>WiFi Audio Streaming (Android)</h1>
+  <img src="https://raw.githubusercontent.com/mu-23/WiFiAudioStreaming-Android/main/fastlane/metadata/android/en-US/images/icon.png" alt="WiFi Audio Streaming" width="120" />
 
-  <a href="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/releases">  
-    <img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png" alt="Get it on GitHub" height="80">  
-  </a>
-  <a href="https://apt.izzysoft.de/packages/com.cuscus.wifiaudiostreaming">  
-    <img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png" alt="Get it on IzzyOnDroidGitLab" height="80">  
-  </a>  
+  # WiFi Audio Streaming for Android
+
+  **Android 局域网低延迟音频串流**
+
+  将 Android 设备的内部音频或麦克风音频实时发送到局域网中的另一台设备，也可以把 Android 设备作为接收端直接播放音频。
+
+  [下载最新版本](https://github.com/mu-23/WiFiAudioStreaming-Android/releases/latest) ·
+  [查看 Releases](https://github.com/mu-23/WiFiAudioStreaming-Android/releases) ·
+  [实验分支](https://github.com/mu-23/WiFiAudioStreaming-Android/tree/audio-bridge-lab)
 </div>
 
-Turn your Android device into a **versatile wireless audio transmitter, receiver, or web server**.  
-This application allows you to send your phone's audio to any device on the local network (PC, browser, media player), or listen to audio from another device, all without root.  
+---
 
-🌐 **Website**: [marcomorosi.eu/wifi-audio-streaming](https://www.marcomorosi.eu/wifi-audio-streaming/)
+## 项目定位
+
+这个仓库目前作为一个**独立维护的 Android 音频串流项目**继续开发，重点不再只是原项目的简单汉化，而是围绕下面几个方向持续改进：
+
+- **更低的局域网音频延迟**
+- **更稳定的长时间连接与自动恢复**
+- **息屏、Wi-Fi 抖动、短暂断网后的持续工作能力**
+- **Android → Android 的纯音频传输体验**
+- **简体中文本地化**
+- **不 Root 的系统音频直出实验（ADB / Shell / Shizuku）**
+
+当前正式开发分支为 **`main`**。
+
+高风险或架构级实验会优先放在独立分支，例如：
+
+- **`audio-bridge-lab`**：Shell / ADB / Shizuku 系统音频桥实验
+
+实验功能验证稳定后才会考虑合并进 `main`。
 
 ---
 
-## 📸 Overview  
+## 当前主要能力
 
-<p align="center">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png?raw=true" width="700">
-</p>
-<p align="center">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png?raw=true" width="180">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/3.png?raw=true" width="180">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/4.png?raw=true" width="180">
-</p>
-<p align="center">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/5.png?raw=true" width="180">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/6.png?raw=true" width="180">
-  <img src="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/blob/master/fastlane/metadata/android/en-US/images/phoneScreenshots/7.png?raw=true" width="180">
-</p>
+### Android 内部音频串流
 
----
+支持通过 Android 官方 Playback Capture 能力捕获允许被录制的内部音频，并通过局域网发送到其他设备。
 
-## ✨ Key Features  
+普通模式**不需要 Root**。
 
-* **Multi-Protocol Architecture**: Stream using the native low-latency protocol (**WFAS v2**), standard **RTP** for external media players, **HTTP** to listen directly from any web browser (Chrome, Safari, Smart TVs), **DLNA/UPnP** to push audio to AV receivers and smart TVs with no app on the receiving end, or **Snapcast** to drive a synchronised multiroom setup.
-* **Password Protection & End-to-End Encryption**: Choose who can connect with **Off**, **Ask**, or **Key** authorization modes. In Key mode, the client proves it knows the shared password through a mutual HMAC-SHA256 challenge-response (the password itself never touches the wire), and the same key derives per-session **ChaCha20-Poly1305** encryption — every audio packet is sealed and authenticated end-to-end, on both unicast and multicast, no PKI required. See [`WFAS_PROTOCOL.md`](WFAS_PROTOCOL.md).
-* **Smart Auto-Connect**: The app can automatically connect to prioritized IP addresses as soon as they are detected on the network, even in the background.
-* **Automation & Scripting**: Trigger the app from the outside via home-screen shortcuts, deep links (`wifiaudio://`), or broadcast intents (Tasker, MacroDroid, NFC tags). Save full server/client configurations as named, one-tap presets. External commands are refused until you enable them in *Automation & Scripting*, and once enabled every command coming from outside the app must carry a per-install secret token, shown on that same screen — the URIs and commands generated there already include it, so no other app on the device can drive the streaming. The token is sealed with an Android Keystore key that never leaves the device, and is excluded from cloud backup and device-to-device transfer, so it stays bound to the phone that generated it.
-* **Widgets & Quick Settings**: Control your server or client directly from your home screen using Material You widgets, or use the Quick Settings tiles in your notification shade for instant access.
-* **Internal Audio Streaming**: Stream your device's internal audio (apps, games, music) to other devices (requires Android 10+).  
-* **Automatic & Smart Manual Discovery**: Clients automatically find available servers via a UDP multicast beacon (group `239.255.0.1`, port `9091`), and the device list badges each server as Multicast/Unicast and whether it is encrypted or requires a key. If entering an IP manually, the app automatically detects if the host is using Unicast or Multicast.
-* **Network Interface Selection**: Manually select your active network interface to bypass VPN routing issues or handle multiple Wi-Fi/LAN connections.
-* **Server Volume Control**: Adjust the transmission volume directly from the UI or by using your device's physical volume buttons while streaming.
-* **Dark Screen Mode**: When your phone is acting as a client, locking the screen or leaving the app lets Android throttle the background process to save battery, which can introduce audio artifacts. Dark Screen mode keeps the app active with the screen technically on, showing either a pure-black overlay or an outlined theme, ideal for OLED displays that want to look "off" without actually going to sleep.
-* **Automatic Update Checker**: Optionally check GitHub for new releases on startup, or trigger a manual check any time, with release notes shown right inside the app.
-* **Modern Interface**: Rebuilt from the ground up with **Jetpack Compose** and a full **Material 3 Expressive** redesign, featuring dynamic colors and bilingual support (EN/IT).
+> Android 对系统音频捕获有权限和应用级限制。部分应用可以禁止自己的音频被第三方应用捕获。
 
----
+### WFAS 原生低延迟协议
 
-## ⚠️ Security & Encryption Notice
+项目内置 WFAS v2，用于 Android 设备之间的低延迟 PCM 音频传输。
 
-The optional WFAS encryption feature is provided **"AS IS"** and is intended primarily as a lightweight privacy and traffic-protection layer for trusted local networks (LAN/P2P).
+当前维护方向包括：
 
-It is **not intended to provide protection against high-threat attackers, hostile networks, or security-critical environments**, and it should not be relied upon as a substitute for a dedicated secure transport or other security mechanisms where stronger guarantees are required.
+- UDP 音频传输
+- 包序号与采样位置
+- 丢包与乱序处理
+- 播放缓冲控制
+- PLC / 音频缺口掩盖
+- 连接存活检测
+- 自动重连
+- 网络变化恢复
+- 可选认证与加密
 
-Users and integrators are responsible for evaluating whether WFAS's security properties and their network environment are appropriate for their intended use.
+当前新安装默认 WFAS Wi-Fi 延迟设置为 **40 ms**，后续仍在继续研究更低延迟的自适应缓冲方案。
 
-The WFAS protocol and its reference implementations are provided under the terms of their respective open-source licenses. No additional security guarantees are implied beyond those explicitly documented by the protocol and implementation.
+### 多种输出协议
 
-Security issues should be reported to the project maintainers so they can be investigated and addressed in future releases.
+除了 WFAS，还保留了原项目丰富的输出能力：
 
----
+- **RTP**：可供 VLC、FFplay、Kodi 等播放器使用
+- **HTTP**：浏览器直接播放
+- **DLNA / UPnP**：推送到电视、功放、音箱等设备
+- **Snapcast**：多房间同步音频
 
-## 📡 Protocol Guide
+这些协议的目标不同：
 
-Choose the best streaming protocol for your needs:
-
-* **WFAS v2 (Native)**: Best for minimal latency and strict synchronization. Requires the app installed on both the sender and receiver. Ideal for gaming and watching videos. Optional password protection and end-to-end encryption. The wire protocol is openly documented and versioned, with a dependency-free C99 reference implementation for embedded and firmware projects: 👉 [wfas-protocol on GitHub](https://github.com/marcomorosi06/wfas-protocol).
-* **RTP**: The industry standard for external media players. Generates an `.sdp` file that can be opened with VLC, Kodi, or FFplay.
-* **HTTP (Web)**: Maximum compatibility using high-efficiency hardware AAC encoding. Listen from any device with a browser. *(Note: Browsers enforce internal buffering, introducing a standard 1–3 second delay).*
-* **Snapcast**: Turn the phone into a Snapcast server so every snapclient on the network plays the same audio in lockstep. The stream protocol lives on TCP 1704 and the JSON-RPC control API on 1705, both advertised over mDNS, so Raspberry Pi and ESP32 clients, Home Assistant and the official Snapcast apps discover and manage it without any extra configuration. PCM, FLAC and Opus are all available; the sync itself is driven by chunk timestamps generated from a sample counter, so playback stays aligned across rooms.
-* **DLNA / UPnP**: Push the stream straight to AV receivers, soundbars and smart TVs, with no app on the other side. The app discovers renderers over SSDP, negotiates the audio format with each one through `ConnectionManager::GetProtocolInfo` (LPCM, WAV or AAC), then drives them over `AVTransport`. Selected renderers are remembered and reconnected automatically, and a watchdog re-issues playback if a device drops the stream. *(Note: DLNA receivers buffer heavily — expect several seconds of delay, so this is meant for music, not for video or gaming).*
-
-Devices on the local network running an incompatible protocol version are now detected immediately during the handshake, both sides get a clear error instead of silently timing out.
+| 协议 | 主要用途 |
+| --- | --- |
+| WFAS | Android ↔ Android，优先低延迟 |
+| RTP | 通用播放器兼容 |
+| HTTP | 最方便的浏览器播放 |
+| DLNA | 电视、功放、音箱等家电 |
+| Snapcast | 多设备同步播放 |
 
 ---
 
-## 💻 Desktop Version  
+## 稳定性改进
 
-The project is also available for **Windows and Linux**!  
-Turn your computer into a wireless audio transmitter, receiver, or web server.  
+当前 `main` 已加入多项针对实际长时间使用的改进。
 
-[![Available on GitHub](https://img.shields.io/badge/Available%20on-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/marcomorosi06/WiFiAudioStreaming-Desktop/)  
-[![Available on GitLab](https://img.shields.io/badge/Available%20on-GitLab-FC6D26?style=for-the-badge&logo=gitlab)](https://gitlab.com/marcomorosi.dev/WiFiAudioStreaming-Desktop/)  
+### 更合理的连接存活判断
+
+WFAS 单播客户端不再只依赖 PING 判断服务器是否存活。
+
+只要客户端持续收到并成功校验有效音频，就会认为服务器仍然在线，从而避免：
+
+```text
+音频其实还在正常传输
+↓
+连续几个 PING 因 Wi-Fi 抖动丢失
+↓
+客户端被错误断开
+```
+
+### 息屏期间保持 Wi-Fi 和 CPU 工作
+
+客户端串流期间会使用：
+
+- Android `PARTIAL_WAKE_LOCK`
+- Wi-Fi 高性能 / 低延迟锁
+
+用于降低设备息屏后 Wi-Fi 省电策略导致的音频抖动和连接中断。
+
+### 临时断线自动重连
+
+手动建立的客户端会话在遇到临时网络问题后自动尝试重新连接。
+
+当前退避节奏大致为：
+
+```text
+1s → 2s → 3s → 5s → 10s
+```
+
+短暂 Wi-Fi 波动不再意味着用户必须重新手动点连接。
+
+### 连接诊断
+
+项目增加了更详细的断线诊断信息，包括：
+
+- PING 最后活动时间
+- 音频最后活动时间
+- 总服务器活动时间
+- 网络 revision
+- 断开原因
+- 链路统计
+
+方便区分真正的 UDP 中断、服务器主动结束、客户端停止和网络切换。
 
 ---
 
-## 🚀 Quick Start  
+## 系统音频直出实验
 
-### Required Permissions  
-* **Screen Capture (for Internal Audio)**: To stream internal audio, Android requires starting a temporary "screen capture" session. Only audio is recorded, no images.  
-* **Notifications**: A persistent notification keeps the streaming service active and stable in the background.  
-* **Audio (Optional)**: `RECORD_AUDIO` is only requested if you manually enable the microphone streaming feature in the settings.
+除了 Android 官方 Playback Capture 路线，目前还在研究一种更直接的方案：
+
+```text
+Android 系统混音
+        ↓
+Shell / Shizuku 音频桥
+        ↓
+PCM
+        ↓
+WFAS UDP
+        ↓
+另一台 Android
+```
+
+目标是：
+
+- 不 Root
+- 尽量不依赖 MediaProjection
+- 直接获得系统混音 PCM
+- 与现有 WFAS 接收端共用同一套网络与播放链路
+
+当前实验代码位于：
+
+[`audio-bridge-lab`](https://github.com/mu-23/WiFiAudioStreaming-Android/tree/audio-bridge-lab)
+
+第一阶段正在验证 Android Shell UID 下的 `REMOTE_SUBMIX` 音频捕获；后续会继续研究 Shizuku UserService 和 Android AudioPolicy 路线。
+
+**实验分支不会覆盖正式 Release，也不会直接修改 `main`。**
 
 ---
 
-### Sending Audio (Server Mode)  
-1. Launch the app and select **Send (Server)**.  
-2. In **Audio Source**, enable **Internal Audio**.  
-3. Choose your preferred protocol in the settings (WFAS, RTP, or HTTP Web).  
-4. For WFAS/RTP, choose **Multicast** (multiple clients) or **Unicast** (single client). In Unicast the server serves one client at a time: while a session is running it disappears from other devices' lists, and any other device that tries to connect is told the server is busy instead of being left waiting.  
-5. Optionally set an authorization mode (**Off**, **Ask**, or **Key**) in Server Mode → Security to control who can connect, and enable encryption if you set a key.
-6. Tap **Start Server**.  
+## 简体中文
+
+本仓库已加入完整的简体中文本地化，并持续针对中文界面进行维护。
+
+正式 APK 使用固定签名构建，后续同一签名版本可以直接覆盖升级。
 
 ---
 
-### Receiving Audio (Client Mode)  
-1. Launch the app and select **Receive (Client)**.  
-2. The app will automatically search for active servers on the network.  
-3. Select a server from the list to connect. If it's password-protected, you'll be prompted for the key.  
-4. **Fallback (Manual IP)**: If your router blocks discovery, type the server's IP address into the manual input field. The app will automatically configure the correct connection mode.
-5. If the server is already streaming to someone else in Unicast, the app reports *"That server is already streaming to another device"* right away and returns to the list.
+## 安全与加密
+
+WFAS 支持可选的连接认证和加密：
+
+- Off
+- Ask
+- Key
+- HMAC-SHA256 challenge-response
+- ChaCha20-Poly1305
+- HKDF-SHA256
+
+这些功能主要面向可信局域网中的轻量隐私保护。
+
+它们不应被当作高威胁环境、敌对网络或安全关键场景中的专用安全传输方案。
+
+协议细节见：
+
+[`WFAS_PROTOCOL.md`](WFAS_PROTOCOL.md)
 
 ---
 
-## 🛠️ Building from Source  
+## 快速开始
 
-To build the project from source code:  
+### 发送端
+
+1. 打开应用。
+2. 进入 **发送 / Server**。
+3. 启用 **内部音频**。
+4. 选择 WFAS。
+5. 根据需要选择单播或组播。
+6. 启动服务器。
+
+Android 会要求内部音频捕获授权。
+
+这里只采集音频，不会把屏幕画面编码并通过网络发送。
+
+### 接收端
+
+1. 打开另一台 Android 设备上的应用。
+2. 进入 **接收 / Client**。
+3. 等待自动发现发送端。
+4. 点击设备连接。
+
+如果局域网屏蔽了发现广播，也可以手动填写发送端 IP。
+
+---
+
+## 构建
+
+需要 Android Studio / JDK 17。
 
 ```bash
-git clone https://gitlab.com/marcomorosi.dev/wifiaudiostreaming-android.git
-```  
-
-Open the project with [Android Studio](https://developer.android.com/studio?hl=en), sync the Gradle dependencies, and run.
-
-```bash
+git clone https://github.com/mu-23/WiFiAudioStreaming-Android.git
+cd WiFiAudioStreaming-Android
 ./gradlew assembleDebug
-```  
+```
+
+主要技术栈：
+
+- Kotlin
+- Jetpack Compose
+- Material 3
+- Coroutines / StateFlow
+- Ktor Networking
+- Android AudioRecord / AudioTrack
+- MediaCodec
+- Bouncy Castle
 
 ---
 
-## 💻 Tech Stack  
-* **Language**: Kotlin  
-* **UI Framework**: Jetpack Compose (Material 3 + Material 3 Expressive)  
-* **Architecture**: MVVM (Model-View-ViewModel)  
-* **Asynchronous Handling**: Coroutines & StateFlow  
-* **Networking**: Ktor Networking (UDP/TCP sockets, HTTP Server)  
-* **Audio Management**: Android `AudioRecord`, `AudioTrack`, and Hardware AAC MediaCodec APIs  
-* **Cryptography**: HMAC-SHA256 challenge-response authentication, ChaCha20-Poly1305 AEAD encryption, HKDF-SHA256 key derivation (Bouncy Castle)
+## 分支说明
+
+| 分支 | 用途 |
+| --- | --- |
+| `main` | 当前正式维护版本 |
+| `master` | 保留的原始上游基线 |
+| `audio-bridge-lab` | ADB / Shell / Shizuku 音频桥实验 |
+| `zh-v1.2` | 早期中文开发分支，历史保留 |
+
+正式版本开发以 `main` 为准。
 
 ---
 
-## ☕ Support the Project
+## 项目来源与修改声明
 
-This project is free and open-source. If it helped you as much as it helped me, consider buying me a coffee to support its ongoing development!
+本仓库最初基于 Marco Morosi 的
+[WiFiAudioStreaming-Android](https://github.com/marcomorosi06/WiFiAudioStreaming-Android)
+继续开发。
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/marcomorosi)
+原项目为本仓库提供了大量基础实现，包括 Android 音频采集、WFAS、RTP、HTTP、DLNA、Snapcast、Compose UI 等核心框架。
 
----
+**自 2026 年 9 月起，本仓库在原始代码基础上进行了持续修改并作为独立仓库维护。**
 
-# 📄 License
+当前仓库的后续修改包括但不限于：
 
-This project is licensed under the **European Union Public Licence v1.2 (EUPL v1.2)**.
+- 简体中文本地化
+- 构建与发布流程调整
+- 客户端断线诊断
+- 有效音频参与连接存活判断
+- 息屏期间 CPU / Wi-Fi 保活
+- 临时断线自动重连
+- 更低的默认 WFAS 延迟
+- 系统音频直出实验及后续低延迟架构研究
 
-You are free to:
+原项目及其作者的版权和许可声明继续保留。
 
-- **Use**: use the software in any circumstances and for all usage types.
-- **Modify**: adapt, transform, or modify the software.
-- **Distribute**: distribute, lend, or communicate the software to the public.
-- **Commercial use**: use the software for commercial purposes.
-
-**Key Obligations:**
-
-- **Copyleft**: If you modify and distribute the software, you must release it under the same EUPL license.
-- **Attribution**: You must retain all copyright, patent, and trademark notices.
-- **No Warranty**: The software is provided **"as is"**, without any warranties.
-
-For the full legal text, see the `LICENSE.md` file included in this repository or visit the [official EUPL website](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12).
-
-The **app** is EUPL, but the **WFAS v2 wire protocol** is not locked up: a C reference implementation is published separately under the permissive **MIT License** ([`wfas-protocol`](https://github.com/marcomorosi06/wfas-protocol), © 2026 Marco Morosi), so anyone — including embedded/firmware projects — can implement WFAS v2 freely. The copyleft protects this app; the protocol stays open.
+这份说明同时用于明确标识本仓库属于经过修改的衍生作品，而不是原作者发布的官方版本。
 
 ---
 
-# 🧩 Third-Party Software & Licenses
+## License
 
-This app uses several open-source components, each under its own licence. The
-complete attribution list is in **[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)**
-and is also available inside the app (Settings → *Open-source licenses*).
+本项目继续遵循 **European Union Public Licence v1.2 (EUPL v1.2)**。
 
-Components include the AndroidX libraries and Jetpack Compose (© The Android Open
-Source Project / Google LLC), Kotlin and kotlinx.coroutines, Ktor (© JetBrains)
-and Bouncy Castle — all under the Apache License 2.0 except Bouncy Castle (MIT-style
-Bouncy Castle Licence). See the full list for versions and copyrights.
+完整许可文本见：
 
-> Unlike the desktop app, the Android app does **not** bundle FFmpeg: AAC
-> encoding is performed by the platform's built-in `MediaCodec` API.
+[`LICENSE.md`](LICENSE.md)
+
+根据 EUPL 的要求：
+
+- 保留原有版权与许可声明
+- 修改后的作品继续按照相应许可条件发布
+- 本仓库明确标识了衍生修改及修改时间
+- 第三方组件仍分别遵循其自己的许可证
+
+第三方依赖和版权信息见：
+
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)
+
+---
+
+## 致谢
+
+感谢原项目作者 **Marco Morosi** 及原项目贡献者提供的基础实现。
+
+同时感谢 Android、Kotlin、Jetpack Compose、Ktor、Bouncy Castle 及项目所依赖的其他开源软件社区。
+
+本仓库后续会继续围绕一个核心目标演进：
+
+> **让 Android 设备之间的系统音频传输更简单、更稳定，并尽可能降低实际端到端延迟。**
