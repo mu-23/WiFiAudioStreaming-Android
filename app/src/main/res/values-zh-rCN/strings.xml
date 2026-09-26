@@ -745,4 +745,16 @@
     <string name="shizuku_mic_mix_not_ready">Shizuku 后端暂未支持麦克风混音，本次会话只发送内部音频。</string>
     <string name="select_audio_source_first">启动服务器前请先选择一个音频源。</string>
 
+    <string name="settings_item_keep_connected_title">保持接收端连接</string>
+    <string name="settings_item_keep_connected_desc">Wi‑Fi 中断、超时或发送端重启后持续自动重连，直到你手动点击“断开”。</string>
+    <string name="settings_group_updates">更新</string>
+    <string name="settings_item_auto_update_title">自动检查更新</string>
+    <string name="settings_item_auto_update_desc">启动时检查当前项目的 GitHub Release 是否有新版本。</string>
+    <string name="settings_item_check_update_title">立即检查更新</string>
+    <string name="settings_item_check_update_desc">点击后立即检查当前项目的 GitHub Release。</string>
+    <string name="settings_item_check_update_checking">正在检查…</string>
+    <string name="settings_item_open_shizuku_title">打开 Shizuku</string>
+    <string name="settings_item_open_shizuku_desc">启动或管理用于直接抓取系统音频的 Shizuku 服务。</string>
+    <string name="shizuku_not_installed">未安装 Shizuku。</string>
+
 </resources>
