@@ -1025,7 +1025,7 @@ class MainActivity : ComponentActivity() {
         requestServerStart(ScriptExecutor.resolveServerParams(settings, command))
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (NetworkManager.isServerStreaming) {
+        if (NetworkManager.isServerStreaming && !ShizukuAudioBridgeManager.isActive()) {
             when (keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP -> {
                     NetworkManager.serverVolume.value = (NetworkManager.serverVolume.value + 0.1f).coerceAtMost(2.0f)
@@ -1042,6 +1042,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         if (NetworkManager.isServerStreaming &&
+            !ShizukuAudioBridgeManager.isActive() &&
             (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)) {
             return true // Consuma l'evento: previene il classico "BEEP" di sistema al rilascio del tasto
         }
