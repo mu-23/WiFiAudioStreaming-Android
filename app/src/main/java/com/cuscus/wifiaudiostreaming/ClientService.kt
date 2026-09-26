@@ -124,6 +124,12 @@ class ClientService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        StreamingActionReceiver.stopEverything(this)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         CoroutineScope(Dispatchers.IO).launch {
             updateWidgetState(this@ClientService, false, false)
