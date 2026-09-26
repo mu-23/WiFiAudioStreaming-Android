@@ -781,4 +781,16 @@
     <string name="shizuku_mic_mix_not_ready">Microphone mixing is not supported by the Shizuku backend yet. This session will send internal audio only.</string>
     <string name="select_audio_source_first">Select an audio source before starting the server.</string>
 
+    <string name="settings_item_keep_connected_title">Keep receiver connected</string>
+    <string name="settings_item_keep_connected_desc">After Wi-Fi loss, timeout or sender restart, keep reconnecting until you tap Disconnect.</string>
+    <string name="settings_group_updates">Updates</string>
+    <string name="settings_item_auto_update_title">Check for updates automatically</string>
+    <string name="settings_item_auto_update_desc">On launch, check this project's GitHub releases for a newer version.</string>
+    <string name="settings_item_check_update_title">Check for updates now</string>
+    <string name="settings_item_check_update_desc">Tap to check this project's GitHub releases now.</string>
+    <string name="settings_item_check_update_checking">Checking…</string>
+    <string name="settings_item_open_shizuku_title">Open Shizuku</string>
+    <string name="settings_item_open_shizuku_desc">Start or manage the Shizuku service used for direct system-audio capture.</string>
+    <string name="shizuku_not_installed">Shizuku is not installed.</string>
+
 </resources>
