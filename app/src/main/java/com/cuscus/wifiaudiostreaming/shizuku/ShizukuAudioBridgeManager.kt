@@ -77,6 +77,34 @@ object ShizukuAudioBridgeManager {
             reconnectHandler.removeCallbacks(rebindRunnable)
             Log.i(TAG, "UserService connected: $name")
             val context = appContext ?: return
+
+            val remoteBuild = runCatching { service?.getBuildVersion() ?: -1 }
+                .getOrDefault(-1)
+            if (remoteBuild != BuildConfig.VERSION_CODE) {
+                Log.w(
+                    TAG,
+                    "stale UserService build=$remoteBuild expected=" +
+                        BuildConfig.VERSION_CODE + "; replacing it"
+                )
+                val configToRestart = pendingConfig
+                service = null
+                bound = false
+                bindingInProgress = false
+                reattachingExisting = false
+                runCatching {
+                    Shizuku.unbindUserService(userServiceArgs(context), serviceConnection, true)
+                }.onFailure {
+                    Log.w(TAG, "could not remove stale connected UserService", it)
+                }
+                if (desiredRunning && configToRestart != null) {
+                    reconnectHandler.postDelayed(
+                        { bindAndStart(context, configToRestart) },
+                        250L
+                    )
+                }
+                return
+            }
+
             val config = pendingConfig
             if (reattachingExisting) {
                 reattachingExisting = false
