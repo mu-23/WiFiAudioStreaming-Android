@@ -20,6 +20,7 @@ package com.cuscus.wifiaudiostreaming
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.cuscus.wifiaudiostreaming.shizuku.ShizukuAudioBridgeManager
 
 class StreamingActionReceiver : BroadcastReceiver() {
 
@@ -32,6 +33,9 @@ class StreamingActionReceiver : BroadcastReceiver() {
     }
 
     private fun stopEverything(context: Context) {
+        if (ShizukuAudioBridgeManager.isActive()) {
+            ShizukuAudioBridgeManager.stop(context)
+        }
         NetworkManager.stopStreaming(context)
         context.stopService(Intent(context, AudioCaptureService::class.java))
         context.stopService(Intent(context, ClientService::class.java))
