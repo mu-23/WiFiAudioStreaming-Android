@@ -175,6 +175,7 @@ object NetworkManager {
 
     private var streamingJob: Job? = null
     private var listeningJob: Job? = null
+    private var discoveryExpiryJob: Job? = null
     private var broadcastingJob: Job? = null
     private var originalMediaVolume: Int? = null
     private var micStreamingJob: Job? = null
@@ -991,7 +992,8 @@ object NetworkManager {
         // Un server che sparisce senza dire BYE (app chiusa, WiFi staccato, crash)
         // resterebbe in lista per sempre. Il beacon arriva ogni 3s: dopo DISCOVERY_TTL_MS
         // senza notizie lo consideriamo andato.
-        scope.launch {
+        discoveryExpiryJob?.cancel()
+        discoveryExpiryJob = scope.launch {
             while (isActive) {
                 delay(2000)
                 val now = System.currentTimeMillis()
@@ -3209,12 +3211,17 @@ object NetworkManager {
     fun stopListeningForDevices() {
         listeningJob?.cancel()
         listeningJob = null
+        discoveryExpiryJob?.cancel()
+        discoveryExpiryJob = null
     }
 
     suspend fun restartListeningForDevices(context: Context, networkInterfaceName: String = "Auto") {
         val job = listeningJob
+        val expiryJob = discoveryExpiryJob
         listeningJob = null
+        discoveryExpiryJob = null
         if (job != null) runCatching { job.cancelAndJoin() }
+        expiryJob?.cancel()
         discoveredDevices.value = emptyMap()
         startListeningForDevices(context, networkInterfaceName)
     }
