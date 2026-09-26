@@ -53,8 +53,8 @@ object NotificationCenter {
 
     private const val REQ_OPEN_APP = 0
     private const val REQ_STOP = 1
-    private const val REQ_VOLUME_DOWN = 2
-    private const val REQ_VOLUME_UP = 3
+    private const val REQ_SERVER_VOLUME = 2
+    private const val REQ_CLIENT_VOLUME = 3
 
     private val obsoleteChannels = listOf(
         "audio_stream_channel_v2",
@@ -149,47 +149,62 @@ object NotificationCenter {
         val icon = if (muted) R.drawable.ic_notif_volume_off else R.drawable.ic_notif_stream
 
         return baseBuilder(context, CHANNEL_SERVER, icon)
+            .setContentIntent(volumeControl(context, VolumeControlActivity.MODE_SERVER))
             .setContentTitle(context.getString(R.string.notif_server_title))
             .setContentText(status)
             .setSubText(volumeLabel(context, percent))
-            .setStyle(volumeStyle(context, percent))
+            .setStyle(volumeStyle(context, percent, 200))
             .setShortCriticalText(
                 if (muted) context.getString(R.string.notif_chip_muted) else "$percent%"
-            )
-            .addAction(
-                NotificationCompat.Action.Builder(
-                    IconCompat.createWithResource(context, R.drawable.ic_notif_volume_down),
-                    context.getString(R.string.notif_action_volume_down),
-                    broadcast(context, REQ_VOLUME_DOWN, StreamingActionReceiver.ACTION_VOLUME_DOWN)
-                ).build()
-            )
-            .addAction(
-                NotificationCompat.Action.Builder(
-                    IconCompat.createWithResource(context, R.drawable.ic_notif_volume_up),
-                    context.getString(R.string.notif_action_volume_up),
-                    broadcast(context, REQ_VOLUME_UP, StreamingActionReceiver.ACTION_VOLUME_UP)
-                ).build()
             )
             .addAction(stopAction(context))
             .build()
     }
 
-    fun clientNotification(context: Context, status: String): Notification =
-        baseBuilder(context, CHANNEL_CLIENT, R.drawable.ic_notif_client)
+    fun clientNotification(context: Context, status: String, volume: Float): Notification {
+        val percent = (volume * 100f).toInt().coerceIn(0, 100)
+        val muted = percent == 0
+        return baseBuilder(
+            context,
+            CHANNEL_CLIENT,
+            if (muted) R.drawable.ic_notif_volume_off else R.drawable.ic_notif_client
+        )
+            .setContentIntent(volumeControl(context, VolumeControlActivity.MODE_CLIENT))
             .setContentTitle(context.getString(R.string.notif_client_title))
             .setContentText(status)
-            .setShortCriticalText(context.getString(R.string.notif_chip_live))
+            .setSubText(volumeLabel(context, percent))
+            .setStyle(volumeStyle(context, percent, 100))
+            .setShortCriticalText(
+                if (muted) context.getString(R.string.notif_chip_muted) else "$percent%"
+            )
             .addAction(stopAction(context))
             .build()
+    }
 
-    /** Lab-only foreground notification for the Shizuku shell audio bridge. */
-    fun shizukuBridgeNotification(context: Context, status: String): Notification =
-        baseBuilder(context, CHANNEL_SERVER, R.drawable.ic_notif_stream)
+    /** Foreground notification for the Shizuku shell audio bridge. */
+    fun shizukuBridgeNotification(
+        context: Context,
+        status: String,
+        volume: Float
+    ): Notification {
+        val percent = volumePercent(volume)
+        val muted = percent == 0
+        return baseBuilder(
+            context,
+            CHANNEL_SERVER,
+            if (muted) R.drawable.ic_notif_volume_off else R.drawable.ic_notif_stream
+        )
+            .setContentIntent(volumeControl(context, VolumeControlActivity.MODE_SERVER))
             .setContentTitle("WFAS · Shizuku Audio Bridge")
             .setContentText(status)
-            .setShortCriticalText(context.getString(R.string.notif_chip_live))
+            .setSubText(volumeLabel(context, percent))
+            .setStyle(volumeStyle(context, percent, 200))
+            .setShortCriticalText(
+                if (muted) context.getString(R.string.notif_chip_muted) else "$percent%"
+            )
             .addAction(stopAction(context))
             .build()
+    }
 
     /**
      * Il client Snapcast ha la sua notifica, non quella del client WFAS.
@@ -278,18 +293,29 @@ object NotificationCenter {
             .setShowWhen(false)
             .setRequestPromotedOngoing(true)
 
-    private fun volumeStyle(context: Context, percent: Int): NotificationCompat.ProgressStyle =
-        NotificationCompat.ProgressStyle()
-            .setStyledByProgress(true)
-            .setProgress(percent)
-            .setProgressSegments(
-                listOf(
-                    NotificationCompat.ProgressStyle.Segment(VOLUME_SCALE)
-                        .setColor(ContextCompat.getColor(context, R.color.notif_volume_primary)),
-                    NotificationCompat.ProgressStyle.Segment(BOOST_SEGMENT)
-                        .setColor(ContextCompat.getColor(context, R.color.notif_volume_boost))
-                )
+    private fun volumeStyle(
+        context: Context,
+        percent: Int,
+        maxPercent: Int
+    ): NotificationCompat.ProgressStyle {
+        val segments = if (maxPercent > VOLUME_SCALE) {
+            listOf(
+                NotificationCompat.ProgressStyle.Segment(VOLUME_SCALE)
+                    .setColor(ContextCompat.getColor(context, R.color.notif_volume_primary)),
+                NotificationCompat.ProgressStyle.Segment(maxPercent - VOLUME_SCALE)
+                    .setColor(ContextCompat.getColor(context, R.color.notif_volume_boost))
             )
+        } else {
+            listOf(
+                NotificationCompat.ProgressStyle.Segment(maxPercent)
+                    .setColor(ContextCompat.getColor(context, R.color.notif_volume_primary))
+            )
+        }
+        return NotificationCompat.ProgressStyle()
+            .setStyledByProgress(true)
+            .setProgress(percent.coerceIn(0, maxPercent))
+            .setProgressSegments(segments)
+    }
 
     private fun volumeLabel(context: Context, percent: Int): String =
         if (percent == 0) {
@@ -304,6 +330,24 @@ object NotificationCenter {
             context.getString(R.string.notif_action_stop),
             broadcast(context, REQ_STOP, StreamingActionReceiver.ACTION_STOP_STREAMING)
         ).build()
+
+    private fun volumeControl(context: Context, mode: String): PendingIntent {
+        val requestCode = if (mode == VolumeControlActivity.MODE_SERVER) {
+            REQ_SERVER_VOLUME
+        } else {
+            REQ_CLIENT_VOLUME
+        }
+        val intent = Intent(context, VolumeControlActivity::class.java).apply {
+            putExtra(VolumeControlActivity.EXTRA_MODE, mode)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
 
     private fun openApp(context: Context): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
