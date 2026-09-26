@@ -1986,6 +1986,10 @@ object NetworkManager {
                         announceServerGone(context, networkInterfaceName)
 
                         val clientAlive = java.util.concurrent.atomic.AtomicBoolean(true)
+                        val clientPongCapable = java.util.concurrent.atomic.AtomicBoolean(false)
+                        val lastClientHeartbeatAt = java.util.concurrent.atomic.AtomicLong(
+                            System.currentTimeMillis()
+                        )
 
                         if (rtpEnabled) {
                             rtpJob?.cancel()
@@ -2011,13 +2015,40 @@ object NetworkManager {
                                     sendSocket.send(Datagram(buildPacket { writeText("PING") }, clientAddress))
                                     pingCount++
                                     if (pingCount == 1L || pingCount % 10L == 0L) {
-                                        Log.d(TAG, "[SERVER][UNICAST] PING #$pingCount inviato a $clientAddress failures=$failures")
+                                        Log.d(
+                                            TAG,
+                                            "[SERVER][UNICAST] PING #$pingCount inviato a " +
+                                                "$clientAddress failures=$failures pong=" +
+                                                clientPongCapable.get()
+                                        )
                                     }
                                     failures = 0
+
+                                    // New receivers answer PING with PONG. Only enable
+                                    // heartbeat eviction after capability was observed,
+                                    // so older clients remain compatible.
+                                    if (
+                                        clientPongCapable.get() &&
+                                        System.currentTimeMillis() -
+                                            lastClientHeartbeatAt.get() > 8_000L
+                                    ) {
+                                        Log.w(
+                                            TAG,
+                                            "[SERVER][UNICAST] client heartbeat stale; " +
+                                                "releasing $clientAddress for reconnect"
+                                        )
+                                        clientAlive.set(false)
+                                        break
+                                    }
                                 } catch (e: Exception) {
                                     failures++
-                                    Log.w(TAG, "[SERVER][UNICAST] PING fallito ($failures/3): ${e.message}")
-                                    if (failures >= 3) { clientAlive.set(false) }
+                                    Log.w(
+                                        TAG,
+                                        "[SERVER][UNICAST] PING fallito ($failures/8): ${e.message}"
+                                    )
+                                    if (failures >= 8) {
+                                        clientAlive.set(false)
+                                    }
                                 }
                             }
                         }
@@ -2045,11 +2076,21 @@ object NetworkManager {
                                         }
                                         continue
                                     }
-                                    if (msg == "CLIENT_BYE") {
-                                        Log.d(TAG, "[SERVER][UNICAST] CLIENT_BYE ricevuto, disconnessione pulita")
-                                        println("--- Received CLIENT_BYE from $clientAddress ---")
-                                        clientAlive.set(false)
-                                        break
+                                    when (msg) {
+                                        "PONG" -> {
+                                            clientPongCapable.set(true)
+                                            lastClientHeartbeatAt.set(System.currentTimeMillis())
+                                        }
+                                        "CLIENT_BYE" -> {
+                                            lastClientHeartbeatAt.set(System.currentTimeMillis())
+                                            Log.d(
+                                                TAG,
+                                                "[SERVER][UNICAST] CLIENT_BYE ricevuto, disconnessione pulita"
+                                            )
+                                            println("--- Received CLIENT_BYE from $clientAddress ---")
+                                            clientAlive.set(false)
+                                            break
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
@@ -2445,7 +2486,11 @@ object NetworkManager {
                         lastPingAt.set(connectedAt)
                         lastAudioAt.set(connectedAt)
                         lastServerActivityAt.set(connectedAt)
-                        val serverActivityTimeoutMs = 3000L
+                        // Three seconds was too aggressive on mobile Wi-Fi:
+                        // a short scheduler/network stall could tear down an otherwise
+                        // healthy session. PING is sent every second, so 8 seconds still
+                        // detects a real loss quickly while tolerating transient jitter.
+                        val serverActivityTimeoutMs = 8000L
 
                         val MAGIC_0: Byte = 0x57
                         val MAGIC_1: Byte = 0x46
