@@ -175,6 +175,7 @@ object NetworkManager {
 
     private var streamingJob: Job? = null
     private var listeningJob: Job? = null
+    private var discoveryExpiryJob: Job? = null
     private var broadcastingJob: Job? = null
     private var originalMediaVolume: Int? = null
     private var micStreamingJob: Job? = null
@@ -991,7 +992,8 @@ object NetworkManager {
         // Un server che sparisce senza dire BYE (app chiusa, WiFi staccato, crash)
         // resterebbe in lista per sempre. Il beacon arriva ogni 3s: dopo DISCOVERY_TTL_MS
         // senza notizie lo consideriamo andato.
-        scope.launch {
+        discoveryExpiryJob?.cancel()
+        discoveryExpiryJob = scope.launch {
             while (isActive) {
                 delay(2000)
                 val now = System.currentTimeMillis()
@@ -1984,6 +1986,10 @@ object NetworkManager {
                         announceServerGone(context, networkInterfaceName)
 
                         val clientAlive = java.util.concurrent.atomic.AtomicBoolean(true)
+                        val clientPongCapable = java.util.concurrent.atomic.AtomicBoolean(false)
+                        val lastClientHeartbeatAt = java.util.concurrent.atomic.AtomicLong(
+                            System.currentTimeMillis()
+                        )
 
                         if (rtpEnabled) {
                             rtpJob?.cancel()
@@ -2009,13 +2015,40 @@ object NetworkManager {
                                     sendSocket.send(Datagram(buildPacket { writeText("PING") }, clientAddress))
                                     pingCount++
                                     if (pingCount == 1L || pingCount % 10L == 0L) {
-                                        Log.d(TAG, "[SERVER][UNICAST] PING #$pingCount inviato a $clientAddress failures=$failures")
+                                        Log.d(
+                                            TAG,
+                                            "[SERVER][UNICAST] PING #$pingCount inviato a " +
+                                                "$clientAddress failures=$failures pong=" +
+                                                clientPongCapable.get()
+                                        )
                                     }
                                     failures = 0
+
+                                    // New receivers answer PING with PONG. Only enable
+                                    // heartbeat eviction after capability was observed,
+                                    // so older clients remain compatible.
+                                    if (
+                                        clientPongCapable.get() &&
+                                        System.currentTimeMillis() -
+                                            lastClientHeartbeatAt.get() > 8_000L
+                                    ) {
+                                        Log.w(
+                                            TAG,
+                                            "[SERVER][UNICAST] client heartbeat stale; " +
+                                                "releasing $clientAddress for reconnect"
+                                        )
+                                        clientAlive.set(false)
+                                        break
+                                    }
                                 } catch (e: Exception) {
                                     failures++
-                                    Log.w(TAG, "[SERVER][UNICAST] PING fallito ($failures/3): ${e.message}")
-                                    if (failures >= 3) { clientAlive.set(false) }
+                                    Log.w(
+                                        TAG,
+                                        "[SERVER][UNICAST] PING fallito ($failures/8): ${e.message}"
+                                    )
+                                    if (failures >= 8) {
+                                        clientAlive.set(false)
+                                    }
                                 }
                             }
                         }
@@ -2043,11 +2076,21 @@ object NetworkManager {
                                         }
                                         continue
                                     }
-                                    if (msg == "CLIENT_BYE") {
-                                        Log.d(TAG, "[SERVER][UNICAST] CLIENT_BYE ricevuto, disconnessione pulita")
-                                        println("--- Received CLIENT_BYE from $clientAddress ---")
-                                        clientAlive.set(false)
-                                        break
+                                    when (msg) {
+                                        "PONG" -> {
+                                            clientPongCapable.set(true)
+                                            lastClientHeartbeatAt.set(System.currentTimeMillis())
+                                        }
+                                        "CLIENT_BYE" -> {
+                                            lastClientHeartbeatAt.set(System.currentTimeMillis())
+                                            Log.d(
+                                                TAG,
+                                                "[SERVER][UNICAST] CLIENT_BYE ricevuto, disconnessione pulita"
+                                            )
+                                            println("--- Received CLIENT_BYE from $clientAddress ---")
+                                            clientAlive.set(false)
+                                            break
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
@@ -2443,7 +2486,11 @@ object NetworkManager {
                         lastPingAt.set(connectedAt)
                         lastAudioAt.set(connectedAt)
                         lastServerActivityAt.set(connectedAt)
-                        val serverActivityTimeoutMs = 3000L
+                        // Three seconds was too aggressive on mobile Wi-Fi:
+                        // a short scheduler/network stall could tear down an otherwise
+                        // healthy session. PING is sent every second, so 8 seconds still
+                        // detects a real loss quickly while tolerating transient jitter.
+                        val serverActivityTimeoutMs = 8000L
 
                         val MAGIC_0: Byte = 0x57
                         val MAGIC_1: Byte = 0x46
@@ -2461,7 +2508,7 @@ object NetworkManager {
                                 val now = System.currentTimeMillis()
                                 if (now - lastServerActivityAt.get() > serverActivityTimeoutMs) {
                                     markDisconnect("SERVER_ACTIVITY_TIMEOUT")
-                                    if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
+                                    if (disconnectionSoundEnabled && !ClientSessionController.wantsConnection()) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
                                     streamingJob?.cancel()
                                     break
                                 }
@@ -2658,6 +2705,14 @@ object NetworkManager {
                                                 val pingAt = System.currentTimeMillis()
                                                 lastPingAt.set(pingAt)
                                                 lastServerActivityAt.set(pingAt)
+                                                // New senders use this as a real liveness signal.
+                                                // Older senders simply ignore the extra control packet.
+                                                sock.send(
+                                                    Datagram(
+                                                        buildPacket { writeText("PONG") },
+                                                        remoteAddress
+                                                    )
+                                                )
                                             }
                                             "BYE" -> {
                                                 markDisconnect("SERVER_BYE")
@@ -2827,7 +2882,7 @@ object NetworkManager {
                                     markDisconnect("MULTICAST_SILENCE_TIMEOUT", "lastRxAgeMs=${System.currentTimeMillis() - mcLastRxAt}")
                                     connectionStatus.value =
                                         context.getString(R.string.status_server_disconnected)
-                                    if (disconnectionSoundEnabled) {
+                                    if (disconnectionSoundEnabled && !ClientSessionController.wantsConnection()) {
                                         playDisconnectionSound(context)
                                         disconnectionSoundPlayed = true
                                     }
@@ -3096,7 +3151,11 @@ object NetworkManager {
                 micStreamingJob?.cancel()
                 micStreamingJob = null
                 isMicMuted.value = false
-                if (connectedSuccessfully && !disconnectionSoundPlayed && disconnectionSoundEnabled) {
+                if (connectedSuccessfully &&
+                    !disconnectionSoundPlayed &&
+                    disconnectionSoundEnabled &&
+                    !ClientSessionController.wantsConnection()
+                ) {
                     playDisconnectionSound(context)
                 }
                 if (isStreamingCurrent.value) {
@@ -3190,12 +3249,17 @@ object NetworkManager {
     fun stopListeningForDevices() {
         listeningJob?.cancel()
         listeningJob = null
+        discoveryExpiryJob?.cancel()
+        discoveryExpiryJob = null
     }
 
     suspend fun restartListeningForDevices(context: Context, networkInterfaceName: String = "Auto") {
         val job = listeningJob
+        val expiryJob = discoveryExpiryJob
         listeningJob = null
+        discoveryExpiryJob = null
         if (job != null) runCatching { job.cancelAndJoin() }
+        expiryJob?.cancel()
         discoveredDevices.value = emptyMap()
         startListeningForDevices(context, networkInterfaceName)
     }

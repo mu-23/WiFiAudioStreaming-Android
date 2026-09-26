@@ -23,6 +23,7 @@ import android.content.Intent
 import android.os.Build
 import com.cuscus.wifiaudiostreaming.AudioCaptureService
 import com.cuscus.wifiaudiostreaming.ClientService
+import com.cuscus.wifiaudiostreaming.ClientSessionController
 import com.cuscus.wifiaudiostreaming.NetworkManager
 import com.cuscus.wifiaudiostreaming.SecurityMode
 import com.cuscus.wifiaudiostreaming.UsbLink
@@ -30,6 +31,7 @@ import com.cuscus.wifiaudiostreaming.WfasPolicy
 import com.cuscus.wifiaudiostreaming.ServerInfo
 import com.cuscus.wifiaudiostreaming.data.AppSettings
 import com.cuscus.wifiaudiostreaming.data.SettingsDataStore
+import com.cuscus.wifiaudiostreaming.shizuku.ShizukuAudioBridgeManager
 import kotlinx.coroutines.flow.first
 
 object ScriptExecutor {
@@ -137,7 +139,9 @@ object ScriptExecutor {
             usbMode = command.bool(ScriptParams.USB) ?: settings.usbModeEnabled,
             usbLatencyMs = command.latency() ?: settings.usbLatencyMs,
             muteRender = settings.muteRender,
-            serverPersist = settings.serverPersist
+            // The sender survives all transport/client loss. Only an explicit
+            // Stop ends it; this keeps legacy MediaProjection and Shizuku aligned.
+            serverPersist = true
         )
     }
 
@@ -181,6 +185,10 @@ object ScriptExecutor {
     }
 
     fun stop(context: Context) {
+        ClientSessionController.userDisconnect(context)
+        if (ShizukuAudioBridgeManager.isActive()) {
+            ShizukuAudioBridgeManager.stop(context)
+        }
         NetworkManager.stopStreaming(context)
         context.stopService(Intent(context, AudioCaptureService::class.java))
         context.stopService(Intent(context, ClientService::class.java))

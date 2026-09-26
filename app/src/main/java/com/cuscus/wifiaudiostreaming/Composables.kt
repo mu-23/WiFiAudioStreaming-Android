@@ -485,6 +485,9 @@ fun ExpressiveSettingsScreen(
     appSettings: AppSettings,
     onStreamInternalChange: (Boolean) -> Unit,
     onStreamMicChange: (Boolean) -> Unit,
+    onInternalAudioBackendChange: (String) -> Unit = {},
+    appLanguage: String = AppLanguage.SYSTEM,
+    onLanguageChange: (String) -> Unit = {},
     onSampleRateChange: (Int) -> Unit,
     onChannelConfigChange: (String) -> Unit,
     onBufferSizeChange: (Int) -> Unit,
@@ -498,6 +501,7 @@ fun ExpressiveSettingsScreen(
     onServerProtocolsChange: (Boolean, Int, Boolean) -> Unit,
     onHttpSettingsChange: (Int, Boolean) -> Unit,
     onClientTileIpChange: (String) -> Unit,
+    onClientPersistentConnectionChange: (Boolean) -> Unit = {},
     onAutoConnectEnabledChange: (Boolean) -> Unit,
     onSaveAutoConnectList: (List<AutoConnectEntry>) -> Unit,
     onMuteRenderChange: (Boolean) -> Unit = {},
@@ -535,6 +539,9 @@ fun ExpressiveSettingsScreen(
             appSettings = appSettings,
             onStreamInternalChange = onStreamInternalChange,
             onStreamMicChange = onStreamMicChange,
+            onInternalAudioBackendChange = onInternalAudioBackendChange,
+            appLanguage = appLanguage,
+            onLanguageChange = onLanguageChange,
             onSampleRateChange = onSampleRateChange,
             onChannelConfigChange = onChannelConfigChange,
             onBufferSizeChange = onBufferSizeChange,
@@ -548,6 +555,7 @@ fun ExpressiveSettingsScreen(
             onServerProtocolsChange = onServerProtocolsChange,
             onHttpSettingsChange = onHttpSettingsChange,
             onClientTileIpChange = onClientTileIpChange,
+            onClientPersistentConnectionChange = onClientPersistentConnectionChange,
             onSaveAutoConnectList = onSaveAutoConnectList,
             onAutoConnectEnabledChange = onAutoConnectEnabledChange,
             onMuteRenderChange = onMuteRenderChange,
@@ -579,6 +587,9 @@ fun SettingsScreenContent(
     appSettings: AppSettings,
     onStreamInternalChange: (Boolean) -> Unit,
     onStreamMicChange: (Boolean) -> Unit,
+    onInternalAudioBackendChange: (String) -> Unit = {},
+    appLanguage: String = AppLanguage.SYSTEM,
+    onLanguageChange: (String) -> Unit = {},
     onSampleRateChange: (Int) -> Unit,
     onChannelConfigChange: (String) -> Unit,
     onBufferSizeChange: (Int) -> Unit,
@@ -592,6 +603,7 @@ fun SettingsScreenContent(
     onServerProtocolsChange: (Boolean, Int, Boolean) -> Unit,
     onHttpSettingsChange: (Int, Boolean) -> Unit,
     onClientTileIpChange: (String) -> Unit,
+    onClientPersistentConnectionChange: (Boolean) -> Unit = {},
     onAutoConnectEnabledChange: (Boolean) -> Unit,
     onSaveAutoConnectList: (List<AutoConnectEntry>) -> Unit,
     onMuteRenderChange: (Boolean) -> Unit = {},
@@ -734,18 +746,85 @@ fun SettingsScreenContent(
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_internal_audio_title),
                         description = stringResource(R.string.settings_item_internal_audio_desc),
-                        icon = Icons.Outlined.MobileScreenShare,
+                        icon = Icons.Outlined.GraphicEq,
                         isChecked = appSettings.streamInternal,
                         onCheckedChange = onStreamInternalChange
                     )
                     AnimatedVisibility(visible = appSettings.streamInternal) {
-                        SettingsSwitchItem(
-                            title = stringResource(R.string.settings_item_mute_render_title),
-                            description = stringResource(R.string.settings_item_mute_render_desc),
-                            icon = Icons.Outlined.VolumeOff,
-                            isChecked = appSettings.muteRender,
-                            onCheckedChange = onMuteRenderChange
-                        )
+                        Column {
+                            SettingsChoiceItem(
+                                title = stringResource(R.string.settings_item_capture_backend_title),
+                                description = stringResource(R.string.settings_item_capture_backend_desc),
+                                icon = Icons.Outlined.Memory,
+                                options = listOf(
+                                    ChoiceOption(
+                                        Icons.Outlined.Bolt,
+                                        stringResource(R.string.capture_backend_shizuku_short),
+                                        InternalAudioBackend.SHIZUKU
+                                    ),
+                                    ChoiceOption(
+                                        Icons.Outlined.MobileScreenShare,
+                                        stringResource(R.string.capture_backend_legacy_short),
+                                        InternalAudioBackend.MEDIA_PROJECTION
+                                    )
+                                ),
+                                selectedValue = appSettings.internalAudioBackend,
+                                selectedDescription = if (
+                                    appSettings.internalAudioBackend == InternalAudioBackend.MEDIA_PROJECTION
+                                ) {
+                                    stringResource(R.string.capture_backend_legacy_desc)
+                                } else {
+                                    stringResource(R.string.capture_backend_shizuku_desc)
+                                },
+                                onSelect = onInternalAudioBackendChange
+                            )
+
+                            if (appSettings.internalAudioBackend == InternalAudioBackend.MEDIA_PROJECTION) {
+                                SettingsSwitchItem(
+                                    title = stringResource(R.string.settings_item_mute_render_title),
+                                    description = stringResource(R.string.settings_item_mute_render_desc),
+                                    icon = Icons.Outlined.VolumeOff,
+                                    isChecked = appSettings.muteRender,
+                                    onCheckedChange = onMuteRenderChange
+                                )
+                            } else {
+                                SettingsInfoItem(
+                                    title = stringResource(R.string.shizuku_backend_info_title),
+                                    description = stringResource(R.string.shizuku_backend_info_desc),
+                                    icon = Icons.Outlined.Security
+                                )
+                                SettingsClickableItem(
+                                    title = stringResource(R.string.settings_item_open_shizuku_title),
+                                    description = stringResource(R.string.settings_item_open_shizuku_desc),
+                                    icon = Icons.Outlined.OpenInNew,
+                                    onClick = {
+                                        val launch = context.packageManager
+                                            .getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                                        if (launch != null) {
+                                            context.startActivity(launch)
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.shizuku_not_installed),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                                )
+                                SettingsInfoItem(
+                                    title = stringResource(R.string.shizuku_backend_limit_title),
+                                    description = stringResource(R.string.shizuku_backend_limit_desc),
+                                    icon = Icons.Outlined.Info
+                                )
+                                if (appSettings.streamMic) {
+                                    SettingsInfoItem(
+                                        title = stringResource(R.string.shizuku_mic_mix_setting_title),
+                                        description = stringResource(R.string.shizuku_mic_mix_not_ready),
+                                        icon = Icons.Outlined.WarningAmber
+                                    )
+                                }
+                            }
+                        }
                     }
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_mic_title),
@@ -780,6 +859,20 @@ fun SettingsScreenContent(
                             stringResource(R.string.settings_option_stereo) to "STEREO"
                         ),
                         onOptionSelected = { onChannelConfigChange(it) }
+                    )
+                    SettingsSelectionItem(
+                        title = stringResource(R.string.settings_item_capture_buffer_title),
+                        description = stringResource(R.string.settings_item_capture_buffer_desc),
+                        icon = Icons.Outlined.Memory,
+                        currentValue = stringResource(R.string.buffer_size_value, appSettings.bufferSize),
+                        options = linkedMapOf(
+                            "256 B" to 256,
+                            "512 B" to 512,
+                            "1024 B" to 1024,
+                            "2048 B" to 2048,
+                            "4096 B" to 4096
+                        ),
+                        onOptionSelected = onBufferSizeChange
                     )
                     SettingsSliderItem(
                         title = stringResource(R.string.settings_item_latency_title),
@@ -846,6 +939,11 @@ fun SettingsScreenContent(
                         currentValue = appSettings.networkInterface,
                         options = interfaces,
                         onOptionSelected = { onNetworkInterfaceChange(it) }
+                    )
+                    SettingsInfoItem(
+                        title = stringResource(R.string.settings_item_keep_connected_title),
+                        description = stringResource(R.string.settings_item_keep_connected_desc),
+                        icon = Icons.Outlined.Sync
                     )
                     SettingsInfoItem(
                         title = stringResource(R.string.vpn_note_title),
@@ -943,12 +1041,10 @@ fun SettingsScreenContent(
                             icon = Icons.Outlined.WarningAmber
                         )
                     }
-                    SettingsSwitchItem(
+                    SettingsInfoItem(
                         title = stringResource(R.string.settings_item_persist_title),
                         description = stringResource(R.string.settings_item_persist_desc),
-                        icon = Icons.Outlined.AllInclusive,
-                        isChecked = appSettings.serverPersist,
-                        onCheckedChange = onServerPersistChange
+                        icon = Icons.Outlined.AllInclusive
                     )
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_rtp_title),
@@ -1087,6 +1183,39 @@ fun SettingsScreenContent(
                     title = stringResource(R.string.settings_group_personalization),
                     icon = Icons.Outlined.Palette
                 ) {
+                    SettingsChoiceItem(
+                        title = stringResource(R.string.settings_item_language_title),
+                        description = stringResource(R.string.settings_item_language_desc),
+                        icon = Icons.Outlined.Language,
+                        options = listOf(
+                            ChoiceOption(
+                                Icons.Outlined.PhoneAndroid,
+                                stringResource(R.string.language_system),
+                                AppLanguage.SYSTEM
+                            ),
+                            ChoiceOption(
+                                Icons.Outlined.Translate,
+                                "简体中文",
+                                AppLanguage.CHINESE_SIMPLIFIED
+                            ),
+                            ChoiceOption(
+                                Icons.Outlined.Translate,
+                                "English",
+                                AppLanguage.ENGLISH
+                            )
+                        ),
+                        selectedValue = appLanguage,
+                        selectedDescription = when (appLanguage) {
+                            AppLanguage.CHINESE_SIMPLIFIED ->
+                                stringResource(R.string.language_chinese_desc)
+                            AppLanguage.ENGLISH ->
+                                stringResource(R.string.language_english_desc)
+                            else ->
+                                stringResource(R.string.language_system_desc)
+                        },
+                        onSelect = onLanguageChange
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_connection_sound_title),
                         description = stringResource(R.string.settings_item_connection_sound_desc),
@@ -1261,26 +1390,23 @@ fun SettingsScreenContent(
 
             item {
                 SettingsGroupCard(
-                    title = Bilingual("Updates", "Aggiornamenti").text(),
+                    title = stringResource(R.string.settings_group_updates),
                     icon = Icons.Outlined.Update
                 ) {
                     SettingsSwitchItem(
-                        title = Bilingual("Check for updates automatically", "Controlla aggiornamenti automaticamente").text(),
-                        description = Bilingual(
-                            "On launch, check GitHub for a newer release.",
-                            "All'avvio, controlla su GitHub se c'è una nuova versione."
-                        ).text(),
+                        title = stringResource(R.string.settings_item_auto_update_title),
+                        description = stringResource(R.string.settings_item_auto_update_desc),
                         icon = Icons.Outlined.Update,
                         isChecked = appSettings.autoUpdateCheckEnabled,
                         onCheckedChange = onAutoUpdateCheckChange
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SettingsClickableItem(
-                        title = Bilingual("Check for updates now", "Controlla aggiornamenti ora").text(),
+                        title = stringResource(R.string.settings_item_check_update_title),
                         description = if (checkingForUpdate)
-                            Bilingual("Checking…", "Controllo in corso…").text()
+                            stringResource(R.string.settings_item_check_update_checking)
                         else
-                            Bilingual("Tap to check GitHub now.", "Tocca per controllare ora su GitHub.").text(),
+                            stringResource(R.string.settings_item_check_update_desc),
                         icon = Icons.Outlined.Refresh,
                         onClick = onCheckForUpdates
                     )
@@ -1349,7 +1475,7 @@ fun SettingsScreenContent(
                         description = stringResource(R.string.source_code_view_on_github),
                         icon = Icons.Outlined.Code,
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcomorosi06/WiFiAudioStreaming-Android/"))
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mu-23/WiFiAudioStreaming-Android/"))
                             context.startActivity(intent)
                         }
                     )

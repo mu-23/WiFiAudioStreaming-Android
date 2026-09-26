@@ -21,6 +21,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import com.cuscus.wifiaudiostreaming.InternalAudioBackend
 import com.cuscus.wifiaudiostreaming.UsbLink
 import com.cuscus.wifiaudiostreaming.WfasPolicy
 import com.cuscus.wifiaudiostreaming.scripting.AutomationGate
@@ -119,6 +120,7 @@ val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(na
 data class AppSettings(
     val streamInternal: Boolean,
     val streamMic: Boolean,
+    val internalAudioBackend: String = InternalAudioBackend.SHIZUKU,
     val sampleRate: Int,
     val channelConfig: String,
     val bufferSize: Int,
@@ -158,10 +160,11 @@ data class AppSettings(
     // volte; spento, si sente sia qui che sul client.
     val muteRender: Boolean = true,
     // In unicast: quando il client si stacca finisce la sessione, non il server.
-    val serverPersist: Boolean = false,
+    val serverPersist: Boolean = true,
     val clientTileIp: String = "",
     val autoConnectEnabled: Boolean = false,
     val autoConnectList: String = "",
+    val clientPersistentConnection: Boolean = true,
     val connectionSoundEnabled: Boolean = true,
     val disconnectionSoundEnabled: Boolean = true,
     val lastSeenChangelogVersion: String = "",
@@ -197,6 +200,7 @@ class SettingsDataStore(context: Context) {
     private object PreferencesKeys {
         val STREAM_INTERNAL = booleanPreferencesKey("stream_internal")
         val STREAM_MIC = booleanPreferencesKey("stream_mic")
+        val INTERNAL_AUDIO_BACKEND = stringPreferencesKey("internal_audio_backend")
         val SAMPLE_RATE = intPreferencesKey("sample_rate")
         val CHANNEL_CONFIG = stringPreferencesKey("channel_config")
         val BUFFER_SIZE = intPreferencesKey("buffer_size")
@@ -234,6 +238,7 @@ class SettingsDataStore(context: Context) {
         val CLIENT_TILE_IP = stringPreferencesKey("client_tile_ip")
         val AUTO_CONNECT_ENABLED = booleanPreferencesKey("auto_connect_enabled")
         val AUTO_CONNECT_LIST = stringPreferencesKey("auto_connect_list")
+        val CLIENT_PERSISTENT_CONNECTION = booleanPreferencesKey("client_persistent_connection")
         val CONNECTION_SOUND_ENABLED = booleanPreferencesKey("connection_sound_enabled")
         val DISCONNECTION_SOUND_ENABLED = booleanPreferencesKey("disconnection_sound_enabled")
         val AUTOMATION_SCRIPTS = stringPreferencesKey("automation_scripts")
@@ -337,6 +342,9 @@ class SettingsDataStore(context: Context) {
         AppSettings(
             streamInternal = preferences[PreferencesKeys.STREAM_INTERNAL] ?: true,
             streamMic = preferences[PreferencesKeys.STREAM_MIC] ?: false,
+            internalAudioBackend = InternalAudioBackend.normalize(
+                preferences[PreferencesKeys.INTERNAL_AUDIO_BACKEND]
+            ),
             sampleRate = preferences[PreferencesKeys.SAMPLE_RATE] ?: 48000,
             channelConfig = preferences[PreferencesKeys.CHANNEL_CONFIG] ?: "STEREO",
             bufferSize = preferences[PreferencesKeys.BUFFER_SIZE] ?: 512,
@@ -346,7 +354,7 @@ class SettingsDataStore(context: Context) {
             onboardingCompleted = preferences[PreferencesKeys.ONBOARDING_COMPLETED] ?: false,
             lastMulticastMode = preferences[PreferencesKeys.LAST_MULTICAST_MODE] ?: false,
             muteRender = preferences[PreferencesKeys.MUTE_RENDER] ?: true,
-            serverPersist = preferences[PreferencesKeys.SERVER_PERSIST] ?: false,
+            serverPersist = preferences[PreferencesKeys.SERVER_PERSIST] ?: true,
             networkInterface = preferences[PreferencesKeys.NETWORK_INTERFACE] ?: "Auto",
             rtpEnabled = preferences[PreferencesKeys.RTP_ENABLED] ?: false,
             rtpPort = preferences[PreferencesKeys.RTP_PORT] ?: 9094,
@@ -379,6 +387,8 @@ class SettingsDataStore(context: Context) {
             clientTileIp = preferences[PreferencesKeys.CLIENT_TILE_IP] ?: "",
             autoConnectEnabled = preferences[PreferencesKeys.AUTO_CONNECT_ENABLED] ?: false,
             autoConnectList = preferences[PreferencesKeys.AUTO_CONNECT_LIST] ?: "",
+            clientPersistentConnection =
+                preferences[PreferencesKeys.CLIENT_PERSISTENT_CONNECTION] ?: true,
             connectionSoundEnabled = preferences[PreferencesKeys.CONNECTION_SOUND_ENABLED] ?: true,
             disconnectionSoundEnabled = preferences[PreferencesKeys.DISCONNECTION_SOUND_ENABLED] ?: true,
             hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
@@ -449,6 +459,13 @@ class SettingsDataStore(context: Context) {
         }
     }
 
+    suspend fun saveInternalAudioBackend(backend: String) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.INTERNAL_AUDIO_BACKEND] =
+                InternalAudioBackend.normalize(backend)
+        }
+    }
+
     suspend fun saveMuteRender(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.MUTE_RENDER] = enabled
@@ -464,6 +481,12 @@ class SettingsDataStore(context: Context) {
     suspend fun saveClientTileIp(ip: String) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.CLIENT_TILE_IP] = ip
+        }
+    }
+
+    suspend fun saveClientPersistentConnection(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CLIENT_PERSISTENT_CONNECTION] = enabled
         }
     }
 

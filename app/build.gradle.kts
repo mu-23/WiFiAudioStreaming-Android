@@ -16,8 +16,21 @@ android {
         includeInBundle = false
     }
 
+    signingConfigs {
+        getByName("debug") {
+            System.getenv("WFAS_LAB_KEYSTORE")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { path ->
+                    storeFile = file(path)
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+        }
+    }
+
     defaultConfig {
-        applicationId = "com.cuscus.wifiaudiostreaming"
+        applicationId = "com.cuscus.wifiaudiostreaming.lab"
         minSdk = 24
         targetSdk = 36
         // CI builds use a monotonically increasing versionCode so each signed
@@ -47,6 +60,8 @@ android {
     }
     buildFeatures {
         compose = true
+        aidl = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -57,12 +72,17 @@ android {
 
 dependencies {
 
+    // Lab-only privileged audio path. UserService runs our code as Android shell (uid 2000).
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+
     implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.activity.ktx)
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)

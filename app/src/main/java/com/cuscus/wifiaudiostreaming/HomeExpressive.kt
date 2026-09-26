@@ -237,6 +237,26 @@ fun ExpressiveHomeScreen(
 
     val live = isStreaming || snapLive || rtpLive
 
+    // The Shizuku backend is the lab default and must stay clickable even
+    // when another option is incompatible. requestServerStart() explains the
+    // exact conflict instead of the UI silently disabling the button or falling
+    // back to MediaProjection.
+    val shizukuLabStartCandidate =
+        isServer &&
+            appSettings.streamInternal &&
+            appSettings.internalAudioBackend == InternalAudioBackend.SHIZUKU
+
+    // RECORD_AUDIO is only required for microphone-only capture and for the
+    // explicitly selected legacy MediaProjection backend. Shizuku system-audio
+    // capture does not need the app microphone permission.
+    val recordAudioPermissionSatisfied =
+        hasMicPermission ||
+            !(
+                (!appSettings.streamInternal && appSettings.streamMic) ||
+                    (appSettings.streamInternal &&
+                        appSettings.internalAudioBackend == InternalAudioBackend.MEDIA_PROJECTION)
+            )
+
     // Il cavo vince su tutto, da tutte e due le parti: se l'audio passa di li'
     // e' la prima cosa da sapere -- spiega la latenza, spiega perche' il wifi
     // non c'entra, e si vede prima di leggere qualunque scritta.
@@ -385,19 +405,21 @@ fun ExpressiveHomeScreen(
                 accent = accent,
                 connectionStatus = heroStatus,
                 localIp = localIp,
-                hasMicPermission = hasMicPermission,
+                hasMicPermission = recordAudioPermissionSatisfied,
                 usbConnected = usbSession,
-                keyMissing = SecurityMode.requiresKey(appSettings.securityMode) &&
-                        !appSettings.qrPairingEnabled &&
-                        appSettings.authKey.isBlank(),
-                canStartServer = WfasPolicy.canStartServerWith(
-                    appSettings.wfasMode,
-                    usbLinkState.isReady,
-                    appSettings.rtpEnabled,
-                    appSettings.httpEnabled,
-                    appSettings.dlnaEnabled,
-                    appSettings.snapcastEnabled
-                ),
+                keyMissing = !shizukuLabStartCandidate &&
+                    SecurityMode.requiresKey(appSettings.securityMode) &&
+                    !appSettings.qrPairingEnabled &&
+                    appSettings.authKey.isBlank(),
+                canStartServer = shizukuLabStartCandidate ||
+                    WfasPolicy.canStartServerWith(
+                        appSettings.wfasMode,
+                        usbLinkState.isReady,
+                        appSettings.rtpEnabled,
+                        appSettings.httpEnabled,
+                        appSettings.dlnaEnabled,
+                        appSettings.snapcastEnabled
+                    ),
                 onActivateWfas = onActivateWfas,
                 onStartServer = onStartServer,
                 onStopServer = onStopLive
@@ -1013,14 +1035,25 @@ private fun StateHero(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(8.dp))
+                    val idleStatus = stringResource(R.string.status_idle)
+                    val readyDetail =
+                        if (connectionStatus.isBlank() || connectionStatus == idleStatus) {
+                            localIp
+                        } else {
+                            connectionStatus
+                        }
                     Text(
                         text = when (p) {
-                            HeroPhase.Ready -> localIp
+                            HeroPhase.Ready -> readyDetail
                             HeroPhase.Searching -> stringResource(R.string.find_device_text)
                             else -> connectionStatus
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = if (p == HeroPhase.Ready) FontFamily.Monospace else FontFamily.Default,
+                        fontFamily = if (p == HeroPhase.Ready && readyDetail == localIp) {
+                            FontFamily.Monospace
+                        } else {
+                            FontFamily.Default
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )

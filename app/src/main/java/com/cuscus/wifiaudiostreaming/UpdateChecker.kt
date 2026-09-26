@@ -8,8 +8,8 @@ import java.net.URL
 
 object UpdateChecker {
 
-    private const val REPO = "marcomorosi06/WiFiAudioStreaming-Android"
-    const val RELEASES_URL = "https://github.com/marcomorosi06/WiFiAudioStreaming-Android/releases/latest"
+    private const val REPO = "mu-23/WiFiAudioStreaming-Android"
+    const val RELEASES_URL = "https://github.com/mu-23/WiFiAudioStreaming-Android/releases/latest"
 
     sealed class Result {
         data class UpToDate(val current: String) : Result()

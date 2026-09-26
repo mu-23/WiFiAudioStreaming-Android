@@ -80,7 +80,7 @@ object WfasPairingUri {
     ): String {
         val custom = build(ip, port, mode, keyBase64, expEpochSeconds, mcastEpoch)
         val path = if (italian) APPLINK_PATH_IT else APPLINK_PATH
-        return "https://$APPLINK_HOST$path/#" + custom.substringAfter('?')
+        return "https://$APPLINK_HOST$path#" + custom.substringAfter('?')
     }
 
     fun parse(uri: String, nowEpochSeconds: Long = System.currentTimeMillis() / 1000): PairingPayload? {

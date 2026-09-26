@@ -34,7 +34,7 @@ import android.view.View
 import android.view.animation.AccelerateInterpolator
 import android.view.KeyEvent
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,12 +92,13 @@ import com.cuscus.wifiaudiostreaming.scripting.ResolvedServerParams
 import com.cuscus.wifiaudiostreaming.scripting.ScriptActionType
 import com.cuscus.wifiaudiostreaming.scripting.ScriptCommand
 import com.cuscus.wifiaudiostreaming.scripting.ScriptExecutor
+import com.cuscus.wifiaudiostreaming.shizuku.ShizukuAudioBridgeManager
 import kotlinx.coroutines.launch
 
 private const val SPLASH_CHOREOGRAPHY_MS = 900L
 private const val SPLASH_HANDOFF_MS = 160L
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -423,26 +424,122 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun requestServerStart(params: ResolvedServerParams) {
         pendingServerParams = params
+        val settings = viewModel.appSettings.value
 
-        if (params.streamInternal && !hasRecordAudioPermission()) {
-            onMicPermissionGranted = { requestServerStart(params) }
-            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        if (params.streamInternal) {
+            val backend = InternalAudioBackend.normalize(settings?.internalAudioBackend)
+
+            if (backend == InternalAudioBackend.MEDIA_PROJECTION) {
+                // Legacy compatibility path: only entered when the user chose it
+                // explicitly in Settings. Shizuku never silently falls back here.
+                if (!hasRecordAudioPermission()) {
+                    onMicPermissionGranted = { requestServerStart(params) }
+                    recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    return
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val projectionManager =
+                        getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                    mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+                } else {
+                    pendingServerParams = null
+                    viewModel.updateStatus(getString(R.string.internal_audio_android_version_required))
+                }
+                return
+            }
+
+            // Default path: App + Shizuku. Unsupported combinations fail
+            // explicitly; they never trigger MediaProjection behind the user's back.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                pendingServerParams = null
+                val detail = getString(R.string.shizuku_requires_android_11)
+                viewModel.updateStatus(detail)
+                Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
+                return
+            }
+
+            val unsupportedProtocols =
+                params.isMulticast ||
+                    params.rtpEnabled ||
+                    params.httpEnabled ||
+                    params.dlnaEnabled ||
+                    params.snapcastEnabled
+
+            if (unsupportedProtocols) {
+                pendingServerParams = null
+                val detail = getString(R.string.shizuku_unicast_only)
+                viewModel.updateStatus(detail)
+                Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
+                return
+            }
+
+            val securityOff =
+                settings != null &&
+                    settings.securityMode.equals("OFF", ignoreCase = true) &&
+                    !settings.encryptionEnabled &&
+                    !settings.qrPairingEnabled
+
+            if (!securityOff) {
+                pendingServerParams = null
+                val detail = getString(R.string.shizuku_security_off_required)
+                viewModel.updateStatus(detail)
+                Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
+                return
+            }
+
+            if (params.streamMic) {
+                // Mixing is not implemented in the privileged bridge yet.
+                // Keep the user's preference intact; ignore mic for this session
+                // instead of mutating settings or falling back to screen capture.
+                Toast.makeText(
+                    this,
+                    getString(R.string.shizuku_mic_mix_not_ready),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+            // End any stale legacy projection before entering the new backend.
+            runCatching {
+                startService(
+                    Intent(this, AudioCaptureService::class.java).apply {
+                        action = AudioCaptureService.ACTION_YIELD
+                    }
+                )
+            }
+
+            ShizukuAudioBridgeManager.start(
+                this,
+                ShizukuAudioBridgeManager.Config(
+                    port = params.streamingPort,
+                    sampleRate = params.sampleRate,
+                    channels = if (params.channelConfig.equals("STEREO", ignoreCase = true)) 2 else 1,
+                    packetBytes = settings?.maxPayloadBytes ?: 512,
+                    keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+                    networkInterfaceName = params.networkInterface,
+                    persistAfterClient = true
+                )
+            )
+            pendingServerParams = null
             return
         }
 
-        if (!params.streamInternal && params.streamMic) {
+        // Microphone-only mode never needs MediaProjection.
+        if (params.streamMic) {
+            if (!hasRecordAudioPermission()) {
+                onMicPermissionGranted = { requestServerStart(params) }
+                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                return
+            }
             ScriptExecutor.startServerMicOnly(this, params)
             viewModel.setIsStreaming(true)
             pendingServerParams = null
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
-        } else {
-            viewModel.updateStatus(getString(R.string.internal_audio_android_version_required))
-        }
+        pendingServerParams = null
+        val detail = getString(R.string.select_audio_source_first)
+        viewModel.updateStatus(detail)
+        Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -534,14 +631,14 @@ class MainActivity : ComponentActivity() {
                 onUpdate = {
                     val intent = Intent(
                         Intent.ACTION_VIEW,
-                        Uri.parse("https://www.marcomorosi.eu/wifi-audio-streaming/download/")
+                        Uri.parse("https://github.com/mu-23/WiFiAudioStreaming-Android/releases")
                     )
                     runCatching { context.startActivity(intent) }
                     viewModel.clearProtocolMismatch()
                 },
                 onGithub = {
                     val updateUrl = if (mismatch.localVersion < mismatch.remoteVersion)
-                        "https://github.com/marcomorosi06/WiFiAudioStreaming-Android/releases"
+                        "https://github.com/mu-23/WiFiAudioStreaming-Android/releases"
                     else
                         "https://github.com/marcomorosi06/WiFiAudioStreaming-Desktop/releases"
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl))
@@ -559,7 +656,7 @@ class MainActivity : ComponentActivity() {
                 onUpdate = {
                     val intent = Intent(
                         Intent.ACTION_VIEW,
-                        Uri.parse("https://www.marcomorosi.eu/wifi-audio-streaming/download/")
+                        Uri.parse("https://github.com/mu-23/WiFiAudioStreaming-Android/releases")
                     )
                     runCatching { context.startActivity(intent) }
                     viewModel.clearUnresponsiveServer()
@@ -619,7 +716,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(pendingStartServer.value) {
             if (pendingStartServer.value) {
                 pendingStartServer.value = false
-                startMediaProjectionRequest()
+                startServerRequest()
             }
         }
 
@@ -689,7 +786,7 @@ class MainActivity : ComponentActivity() {
             localIp = localIp,
             onToggleMode = viewModel::toggleMode,
             onStartServer = {
-                startMediaProjectionRequest()
+                startServerRequest()
             },
             onStopServer = {
                 // Lo stato autorevole e' quello di NetworkManager, non il ruolo
@@ -763,6 +860,9 @@ class MainActivity : ComponentActivity() {
             appSettings = currentSettings,
             onStreamInternalChange = viewModel::setStreamInternal,
             onStreamMicChange = viewModel::setStreamMic,
+            onInternalAudioBackendChange = viewModel::setInternalAudioBackend,
+            appLanguage = AppLanguage.current(),
+            onLanguageChange = AppLanguage::apply,
             onSampleRateChange = viewModel::setSampleRate,
             onChannelConfigChange = viewModel::setChannelConfig,
             onBufferSizeChange = viewModel::setBufferSize,
@@ -779,6 +879,7 @@ class MainActivity : ComponentActivity() {
             onServerProtocolsChange = viewModel::setServerProtocols,
             onHttpSettingsChange = viewModel::setHttpSettings,
             onClientTileIpChange = viewModel::setClientTileIp,
+            onClientPersistentConnectionChange = viewModel::setClientPersistentConnection,
             onAutoConnectEnabledChange = viewModel::setAutoConnectEnabled,
             onSaveAutoConnectList = viewModel::saveAutoConnectList,
             onMuteRenderChange = viewModel::setMuteRender,
@@ -977,7 +1078,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private fun startMediaProjectionRequest() {
+    private fun startServerRequest() {
         val settings = viewModel.appSettings.value ?: return
         val command = ScriptCommand(
             ScriptActionType.START_SERVER,
@@ -991,7 +1092,7 @@ class MainActivity : ComponentActivity() {
         requestServerStart(ScriptExecutor.resolveServerParams(settings, command))
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (NetworkManager.isServerStreaming) {
+        if (NetworkManager.isServerStreaming && !ShizukuAudioBridgeManager.isActive()) {
             when (keyCode) {
                 KeyEvent.KEYCODE_VOLUME_UP -> {
                     NetworkManager.serverVolume.value = (NetworkManager.serverVolume.value + 0.1f).coerceAtMost(2.0f)
@@ -1008,6 +1109,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         if (NetworkManager.isServerStreaming &&
+            !ShizukuAudioBridgeManager.isActive() &&
             (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)) {
             return true // Consuma l'evento: previene il classico "BEEP" di sistema al rilascio del tasto
         }

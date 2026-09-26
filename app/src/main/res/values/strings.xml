@@ -191,8 +191,8 @@
     <string name="settings_group_server_protocols">Server Protocols</string>
     <string name="settings_item_wfas_title">WFAS (Native)</string>
     <string name="settings_item_wfas_desc">Low-latency custom protocol, used by the mobile and desktop apps.</string>
-    <string name="settings_item_persist_title">Keep Server Running After Disconnect</string>
-    <string name="settings_item_persist_desc">In unicast, a client leaving ends the session, not the server: it keeps the port open and waits for the next one. Multicast already works this way.</string>
+    <string name="settings_item_persist_title">Server stays running</string>
+    <string name="settings_item_persist_desc">Always on. Network loss, silence, or a receiver disappearing never stops the sender. Only an explicit Stop ends the server.</string>
     <string name="settings_item_rtp_title">RTP/PCM Stream</string>
     <string name="settings_item_rtp_desc">Standard protocol for VLC, Kodi, or FFplay.</string>
     <string name="settings_item_http_title">HTTP Web Stream</string>
@@ -315,7 +315,7 @@
     <string name="mic_permission_required">Microphone permission is required.</string>
     <string name="mic_permission_why_button">Why?</string>
     <string name="mic_permission_explanation_title">Why is microphone permission needed?</string>
-    <string name="mic_permission_explanation_body">Starting from Android 10, capturing internal audio requires the MediaProjection API, which always requires the RECORD_AUDIO permission, even if you only intend to capture system audio and not the microphone. This is a precautionary measure enforced by the OS: the audio pipeline is initialized as a single unit, and the system requests the permission upfront without knowing in advance which source will be used. Additionally, some OEM implementations (Samsung, Xiaomi, and others) enforce this requirement more strictly than stock Android, making the permission effectively mandatory in all cases.</string>
+    <string name="mic_permission_explanation_body">Microphone permission is required when the microphone is actually captured, and by the legacy MediaProjection internal-audio backend. The Shizuku internal-audio backend does not need microphone permission.</string>
     <string name="server_audio_restart_hint">No audio on the other device? Try restarting this phone.</string>
 
     <string name="settings_group_automation">Automation &amp; Scripting</string>
@@ -757,5 +757,70 @@
     <string name="sdp_warn_no_rate">No sample rate in the descriptor: assuming 48000 Hz.</string>
     <string name="sdp_warn_channels">Unusual channel count: only 1 or 2 can be played.</string>
     <string name="notif_rtp_title">RTP stream</string>
+
+    <!-- Lab capture backend and language controls -->
+    <string name="settings_item_capture_backend_title">Internal audio capture</string>
+    <string name="settings_item_capture_backend_desc">Choose the internal-audio capture engine. Shizuku is the default; screen sharing is a legacy compatibility option only.</string>
+    <string name="capture_backend_shizuku_short">Shizuku</string>
+    <string name="capture_backend_legacy_short">Legacy</string>
+    <string name="capture_backend_shizuku_desc">Uses Shizuku shell privileges. No MediaProjection or screen-sharing authorization. Android 13+ keeps playback on the source device.</string>
+    <string name="capture_backend_legacy_desc">Uses Android MediaProjection. Requires screen-sharing authorization and is kept only for compatibility.</string>
+    <string name="shizuku_backend_info_title">Shizuku is the default</string>
+    <string name="shizuku_backend_info_desc">Start Shizuku first. Internal audio never silently falls back to screen sharing.</string>
+    <string name="settings_item_capture_buffer_title">Capture buffer</string>
+    <string name="settings_item_capture_buffer_desc">Requested AudioRecord buffer for microphone and legacy capture. Android may raise it to the device minimum.</string>
+    <string name="settings_item_language_title">Language</string>
+    <string name="settings_item_language_desc">Choose the app interface language.</string>
+    <string name="language_system">System</string>
+    <string name="language_system_desc">Follow the phone\'s language.</string>
+    <string name="language_chinese_desc">Use Simplified Chinese.</string>
+    <string name="language_english_desc">Use English.</string>
+    <string name="shizuku_requires_android_11">Shizuku audio capture requires Android 11 or newer.</string>
+    <string name="shizuku_unicast_only">The Shizuku backend currently supports WFAS unicast only. Disable multicast, RTP, HTTP, DLNA and Snapcast.</string>
+    <string name="shizuku_security_off_required">The Shizuku backend currently requires security mode OFF; authentication and encryption are not wired yet.</string>
+    <string name="shizuku_mic_mix_not_ready">Microphone mixing is not supported by the Shizuku backend yet. This session will send internal audio only.</string>
+    <string name="select_audio_source_first">Select an audio source before starting the server.</string>
+
+    <string name="settings_item_keep_connected_title">Receiver stays connected</string>
+    <string name="settings_item_keep_connected_desc">Always on. Silence and temporary network loss never end the logical connection; it keeps waiting and reconnecting until you tap Disconnect.</string>
+    <string name="settings_group_updates">Updates</string>
+    <string name="settings_item_auto_update_title">Check for updates automatically</string>
+    <string name="settings_item_auto_update_desc">On launch, check this project\'s GitHub releases for a newer version.</string>
+    <string name="settings_item_check_update_title">Check for updates now</string>
+    <string name="settings_item_check_update_desc">Tap to check this project\'s GitHub releases now.</string>
+    <string name="settings_item_check_update_checking">Checking…</string>
+    <string name="settings_item_open_shizuku_title">Open Shizuku</string>
+    <string name="settings_item_open_shizuku_desc">Start or manage the Shizuku service used for direct system-audio capture.</string>
+    <string name="shizuku_not_installed">Shizuku is not installed.</string>
+
+    <string name="shizuku_backend_limit_title">Current Shizuku lab scope</string>
+    <string name="shizuku_backend_limit_desc">Internal audio uses Shizuku by default. Unsupported combinations stop with a clear message and never fall back to screen sharing. WFAS unicast with security off is the currently integrated path.</string>
+    <string name="shizuku_mic_mix_setting_title">Microphone mixing not wired yet</string>
+
+    <string name="update_dialog_available_title">Update available</string>
+    <string name="update_dialog_available_body">A newer version is ready to download.</string>
+    <string name="update_dialog_up_to_date_title">Up to date</string>
+    <string name="update_dialog_up_to_date_body">You are on the latest version (%1$s).</string>
+    <string name="update_dialog_failed_title">GitHub is not responding</string>
+    <string name="update_dialog_failed_body">Could not reach GitHub to check for updates. Please try again later.</string>
+    <string name="update_dialog_ahead_title">This build is newer than the latest release</string>
+    <string name="update_dialog_ahead_body">The installed build is ahead of the latest published release.</string>
+    <string name="update_dialog_github">Open GitHub releases</string>
+    <string name="update_dialog_later">Later</string>
+    <string name="update_dialog_close">Close</string>
+
+    <string name="shizuku_status_disconnected_waiting">Shizuku audio bridge disconnected; waiting for Shizuku</string>
+    <string name="shizuku_status_stopped_resume">Shizuku stopped; connection intent kept. Restart Shizuku to resume.</string>
+    <string name="shizuku_status_not_running">Shizuku is not running. Start Shizuku, then return to WFAS.</string>
+    <string name="shizuku_status_version_required">Shizuku v13+ is required for the AudioPolicy bridge.</string>
+    <string name="shizuku_status_permission_denied">Shizuku permission was denied. Grant WFAS access in Shizuku.</string>
+    <string name="shizuku_status_waiting_permission">Waiting for Shizuku permission</string>
+    <string name="shizuku_prompt_allow_permission">Please allow WFAS in the Shizuku permission dialog.</string>
+    <string name="shizuku_error_request_permission">Cannot request Shizuku permission: %1$s</string>
+    <string name="shizuku_status_starting_bridge">Starting Shizuku audio bridge</string>
+    <string name="shizuku_error_bind_service">Cannot bind Shizuku UserService: %1$s</string>
+    <string name="shizuku_error_remote_call">Shizuku UserService call failed: %1$s</string>
+    <string name="shizuku_error_bridge_start">Shizuku bridge start failed: %1$s</string>
+    <string name="shizuku_bridge_active">Shizuku audio bridge active</string>
 
 </resources>
