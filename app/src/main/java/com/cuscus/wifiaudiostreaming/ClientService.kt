@@ -27,6 +27,9 @@ import android.os.PowerManager
 import android.widget.Toast
 import com.cuscus.wifiaudiostreaming.NetworkManager.updateWidgetState
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 class ClientService : Service() {
 
@@ -48,7 +51,11 @@ class ClientService : Service() {
         NotificationCenter.ensureChannels(this)
         startForeground(
             NotificationCenter.ID_CLIENT,
-            NotificationCenter.clientNotification(this, getString(R.string.notif_connecting))
+            NotificationCenter.clientNotification(
+                this,
+                getString(R.string.notif_connecting),
+                NetworkManager.clientVolume.value
+            )
         )
 
         // Keep both CPU and Wi-Fi fully awake while WFAS is receiving. Several
@@ -61,14 +68,20 @@ class ClientService : Service() {
         // collector instead of leaking a new collector on every delivery.
         if (statusJob?.isActive != true) {
             statusJob = serviceScope.launch {
-                NetworkManager.connectionStatus
-                    .collect { status ->
+                combine(
+                    NetworkManager.connectionStatus,
+                    NetworkManager.clientVolume
+                ) { status, volume -> status to volume }
+                    .distinctUntilChanged()
+                    .conflate()
+                    .collect { (status, volume) ->
                         NotificationCenter.post(
                             this@ClientService,
                             NotificationCenter.ID_CLIENT,
                             NotificationCenter.clientNotification(
                                 this@ClientService,
-                                status.ifBlank { getString(R.string.notif_connecting) }
+                                status.ifBlank { getString(R.string.notif_connecting) },
+                                volume
                             )
                         )
                         delay(UPDATE_THROTTLE_MS)
