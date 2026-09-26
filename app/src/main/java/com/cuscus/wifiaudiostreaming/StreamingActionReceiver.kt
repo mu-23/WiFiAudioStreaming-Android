@@ -33,7 +33,7 @@ class StreamingActionReceiver : BroadcastReceiver() {
     }
 
     private fun stopEverything(context: Context) {
-        ClientSessionController.userDisconnect()
+        ClientSessionController.userDisconnect(context)
         if (ShizukuAudioBridgeManager.isActive()) {
             ShizukuAudioBridgeManager.stop(context)
         }
