@@ -22,7 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collect\nimport kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class ShizukuBridgeHostService : Service() {
@@ -69,7 +69,7 @@ class ShizukuBridgeHostService : Service() {
 
         if (bridgeWatchJob?.isActive != true) {
             bridgeWatchJob = scope.launch {
-                while (kotlinx.coroutines.isActive) {
+                while (isActive) {
                     delay(1_000)
                     if (!ShizukuAudioBridgeManager.refreshRemoteState(this@ShizukuBridgeHostService)) {
                         stopSelf()
