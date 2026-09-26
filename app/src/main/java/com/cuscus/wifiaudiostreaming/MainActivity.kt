@@ -878,6 +878,7 @@ class MainActivity : AppCompatActivity() {
             onServerProtocolsChange = viewModel::setServerProtocols,
             onHttpSettingsChange = viewModel::setHttpSettings,
             onClientTileIpChange = viewModel::setClientTileIp,
+            onClientPersistentConnectionChange = viewModel::setClientPersistentConnection,
             onAutoConnectEnabledChange = viewModel::setAutoConnectEnabled,
             onSaveAutoConnectList = viewModel::saveAutoConnectList,
             onMuteRenderChange = viewModel::setMuteRender,
