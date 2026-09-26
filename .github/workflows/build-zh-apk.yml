@@ -3,9 +3,10 @@ name: Build Chinese APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "zh-v1.2" ]
+    branches: [ "zh-v1.2.1" ]
     paths:
-      - "app/src/main/res/values-zh-rCN/**"
+      - "app/src/main/**"
+      - "app/build.gradle.kts"
       - ".github/workflows/build-zh-apk.yml"
 
 permissions:
@@ -46,23 +47,23 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleDebug --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk WiFi-Audio-Streaming-v1.2-zh-CN.apk
+          cp app/build/outputs/apk/debug/app-debug.apk WiFi-Audio-Streaming-v1.2.1-zh-CN.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Audio-Streaming-v1.2-zh-CN
-          path: WiFi-Audio-Streaming-v1.2-zh-CN.apk
+          name: WiFi-Audio-Streaming-v1.2.1-zh-CN
+          path: WiFi-Audio-Streaming-v1.2.1-zh-CN.apk
           if-no-files-found: error
 
       - name: Publish or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view zh-v1.2 >/dev/null 2>&1; then
-            gh release upload zh-v1.2 WiFi-Audio-Streaming-v1.2-zh-CN.apk --clobber
+          if gh release view zh-v1.2.1 >/dev/null 2>&1; then
+            gh release upload zh-v1.2.1 WiFi-Audio-Streaming-v1.2.1-zh-CN.apk --clobber
           else
-            gh release create zh-v1.2 WiFi-Audio-Streaming-v1.2-zh-CN.apk \
-              --title "WiFi Audio Streaming v1.2 简体中文版" \
-              --notes "Unofficial Simplified Chinese localization based on upstream v1.2."
+            gh release create zh-v1.2.1 WiFi-Audio-Streaming-v1.2.1-zh-CN.apk \
+              --title "WiFi Audio Streaming v1.2.1 简体中文版" \
+              --notes "Unofficial Simplified Chinese localization based on upstream v1.2.1 source."
           fi
