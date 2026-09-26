@@ -18,6 +18,7 @@ jobs:
 
     env:
       EXPECTED_SIGNING_CERT_SHA256: 4ddf267d25a73f0a28446c9e77293204e32f6777c63417feb7bd925040fefb63
+      EXPECTED_KEYSTORE_SHA256: b9547d9d0618baf959842882e376425bded7ebe990d5418c0a8c650e59aa8db2
 
     steps:
       - name: Checkout
@@ -60,6 +61,27 @@ jobs:
           set -euo pipefail
           printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/wfas-release.jks"
           test -s "$RUNNER_TEMP/wfas-release.jks"
+
+      - name: Validate restored signing key
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          ACTUAL_KEYSTORE_SHA256=$(sha256sum "$RUNNER_TEMP/wfas-release.jks" | awk '{print tolower($1)}')
+          if [ "$ACTUAL_KEYSTORE_SHA256" != "$EXPECTED_KEYSTORE_SHA256" ]; then
+            echo "::error::SIGNING_KEY_BASE64 does not match the permanent signing keystore."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/wfas-release.jks" -storepass "$SIGNING_STORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::SIGNING_STORE_PASSWORD does not unlock the permanent signing keystore."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/wfas-release.jks" -storepass "$SIGNING_STORE_PASSWORD" -alias "$SIGNING_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::SIGNING_KEY_ALIAS is not present in the permanent signing keystore."
+            exit 1
+          fi
+          echo "Permanent signing keystore, store password, and alias validated."
 
       - name: Set CI version
         run: |
