@@ -285,6 +285,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setInternalAudioBackend(backend: String) {
+        viewModelScope.launch {
+            settingsDataStore.saveInternalAudioBackend(backend)
+        }
+    }
+
     fun setSampleRate(rate: Int) {
         viewModelScope.launch {
             appSettings.value?.let {
