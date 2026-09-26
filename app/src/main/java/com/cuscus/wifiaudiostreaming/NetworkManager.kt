@@ -2201,20 +2201,23 @@ object NetworkManager {
             val disconnectReason = java.util.concurrent.atomic.AtomicReference("LOCAL_OR_SERVICE_STOP")
             val lastPingAt = java.util.concurrent.atomic.AtomicLong(0L)
             val lastAudioAt = java.util.concurrent.atomic.AtomicLong(0L)
+            val lastServerActivityAt = java.util.concurrent.atomic.AtomicLong(0L)
 
             fun markDisconnect(reason: String, detail: String = "") {
                 disconnectReason.set(reason)
                 val now = System.currentTimeMillis()
                 val pingAt = lastPingAt.get()
                 val audioAt = lastAudioAt.get()
+                val activityAt = lastServerActivityAt.get()
                 val pingAge = if (pingAt > 0L) now - pingAt else -1L
                 val audioAge = if (audioAt > 0L) now - audioAt else -1L
+                val activityAge = if (activityAt > 0L) now - activityAt else -1L
                 Log.w(
                     TAG,
                     "[CLIENT][DISCONNECT] reason=${reason} " +
                             "mode=${if (serverInfo.isMulticast) "MULTICAST" else "UNICAST"} " +
                             "peer=${serverInfo.ip}:${serverInfo.port} " +
-                            "pingAgeMs=${pingAge} audioAgeMs=${audioAge} " +
+                            "pingAgeMs=${pingAge} audioAgeMs=${audioAge} activityAgeMs=${activityAge} " +
                             "netRev=${networkRevision.value} metrics=${LinkMetrics.snapshot.value.format()}" +
                             if (detail.isBlank()) "" else " detail=${detail}"
                 )
@@ -2434,7 +2437,8 @@ object NetworkManager {
                         val connectedAt = System.currentTimeMillis()
                         lastPingAt.set(connectedAt)
                         lastAudioAt.set(connectedAt)
-                        val pingTimeoutMs = 3000L
+                        lastServerActivityAt.set(connectedAt)
+                        val serverActivityTimeoutMs = 3000L
 
                         val MAGIC_0: Byte = 0x57
                         val MAGIC_1: Byte = 0x46
@@ -2450,8 +2454,8 @@ object NetworkManager {
                             while (isActive) {
                                 delay(1000)
                                 val now = System.currentTimeMillis()
-                                if (now - lastPingAt.get() > pingTimeoutMs) {
-                                    markDisconnect("PING_TIMEOUT")
+                                if (now - lastServerActivityAt.get() > serverActivityTimeoutMs) {
+                                    markDisconnect("SERVER_ACTIVITY_TIMEOUT")
                                     if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
                                     streamingJob?.cancel()
                                     break
@@ -2493,6 +2497,13 @@ object NetworkManager {
                                 if (serverEncrypts) return
                                 data = bytes
                             }
+
+                            // Only a packet that has passed protocol/encryption validation
+                            // counts as server liveness. This prevents a few lost PING datagrams
+                            // from tearing down a healthy audio stream.
+                            val acceptedAt = System.currentTimeMillis()
+                            lastAudioAt.set(acceptedAt)
+                            lastServerActivityAt.set(acceptedAt)
 
                             val flags     = data[3].toInt() and 0xFF
                             val seq       = ((data[4].toInt() and 0xFF) shl 8) or (data[5].toInt() and 0xFF)
@@ -2634,12 +2645,15 @@ object NetworkManager {
                                     val pb = ByteArray(pk.remaining.toInt())
                                     pk.readFully(pb)
                                     if (pb.size >= 2 && pb[0] == MAGIC_0 && pb[1] == MAGIC_1) {
-                                        lastAudioAt.set(System.currentTimeMillis())
                                         audio.add(pb)
                                     } else {
                                         val ctrl = pb.toString(Charsets.UTF_8).trim()
                                         when (ctrl) {
-                                            "PING" -> lastPingAt.set(System.currentTimeMillis())
+                                            "PING" -> {
+                                                val pingAt = System.currentTimeMillis()
+                                                lastPingAt.set(pingAt)
+                                                lastServerActivityAt.set(pingAt)
+                                            }
                                             "BYE" -> {
                                                 markDisconnect("SERVER_BYE")
                                                 if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
@@ -3062,6 +3076,7 @@ object NetworkManager {
                 val finalNow = System.currentTimeMillis()
                 val finalPingAt = lastPingAt.get()
                 val finalAudioAt = lastAudioAt.get()
+                val finalActivityAt = lastServerActivityAt.get()
                 Log.i(
                     TAG,
                     "[CLIENT][SESSION-END] reason=${disconnectReason.get()} " +
@@ -3069,6 +3084,7 @@ object NetworkManager {
                             "peer=${serverInfo.ip}:${serverInfo.port} connected=${connectedSuccessfully} " +
                             "pingAgeMs=${if (finalPingAt > 0L) finalNow - finalPingAt else -1L} " +
                             "audioAgeMs=${if (finalAudioAt > 0L) finalNow - finalAudioAt else -1L} " +
+                            "activityAgeMs=${if (finalActivityAt > 0L) finalNow - finalActivityAt else -1L} " +
                             "status='${connectionStatus.value}' netRev=${networkRevision.value} " +
                             "metrics=${LinkMetrics.snapshot.value.format()}"
                 )
