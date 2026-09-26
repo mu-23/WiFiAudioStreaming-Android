@@ -940,12 +940,10 @@ fun SettingsScreenContent(
                         options = interfaces,
                         onOptionSelected = { onNetworkInterfaceChange(it) }
                     )
-                    SettingsSwitchItem(
+                    SettingsInfoItem(
                         title = stringResource(R.string.settings_item_keep_connected_title),
                         description = stringResource(R.string.settings_item_keep_connected_desc),
-                        icon = Icons.Outlined.Sync,
-                        isChecked = appSettings.clientPersistentConnection,
-                        onCheckedChange = onClientPersistentConnectionChange
+                        icon = Icons.Outlined.Sync
                     )
                     SettingsInfoItem(
                         title = stringResource(R.string.vpn_note_title),
@@ -1043,12 +1041,10 @@ fun SettingsScreenContent(
                             icon = Icons.Outlined.WarningAmber
                         )
                     }
-                    SettingsSwitchItem(
+                    SettingsInfoItem(
                         title = stringResource(R.string.settings_item_persist_title),
                         description = stringResource(R.string.settings_item_persist_desc),
-                        icon = Icons.Outlined.AllInclusive,
-                        isChecked = appSettings.serverPersist,
-                        onCheckedChange = onServerPersistChange
+                        icon = Icons.Outlined.AllInclusive
                     )
                     SettingsSwitchItem(
                         title = stringResource(R.string.settings_item_rtp_title),
