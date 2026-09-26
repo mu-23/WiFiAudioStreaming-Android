@@ -516,7 +516,7 @@ class MainActivity : AppCompatActivity() {
                     packetBytes = settings?.maxPayloadBytes ?: 512,
                     keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
                     networkInterfaceName = params.networkInterface,
-                    persistAfterClient = params.serverPersist
+                    persistAfterClient = true
                 )
             )
             pendingServerParams = null
