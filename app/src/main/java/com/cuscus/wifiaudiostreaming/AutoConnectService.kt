@@ -281,6 +281,12 @@ class AutoConnectService : Service() {
         return START_STICKY
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        StreamingActionReceiver.stopEverything(this)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         Log.d("AutoConnect", "Servizio distrutto.")
         serviceScope.cancel()
