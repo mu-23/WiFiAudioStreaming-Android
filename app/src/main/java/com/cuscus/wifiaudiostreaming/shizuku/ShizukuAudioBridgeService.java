@@ -7,6 +7,8 @@
 
 package com.cuscus.wifiaudiostreaming.shizuku;
 
+import com.cuscus.wifiaudiostreaming.BuildConfig;
+
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.AttributionSource;
@@ -143,7 +145,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             }
         } catch (Throwable t) {
             releaseCapture();
-            status = "error: " + t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
+            status = "error: build=" + BuildConfig.VERSION_CODE + " " + t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
             Log.e(TAG, "capture start failed", t);
             return status;
         }
@@ -157,7 +159,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         bridgeThread.setDaemon(true);
         bridgeThread.start();
 
-        status = "running uid=" + uid +
+        status = "running build=" + BuildConfig.VERSION_CODE + " uid=" + uid +
                 " mode=" + captureMode +
                 " port=" + port +
                 " " + sampleRate + "Hz/" + channels + "ch" +
