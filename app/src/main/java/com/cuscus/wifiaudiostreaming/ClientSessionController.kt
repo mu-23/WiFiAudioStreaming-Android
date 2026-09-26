@@ -53,6 +53,7 @@ object ClientSessionController {
     private var statusJob: Job? = null
     private var restoreJob: Job? = null
     private var attemptInFlight = false
+    private var reconnectOwnsDiscovery = false
 
     fun wantsConnection(): Boolean = desiredConnected
 
@@ -121,6 +122,7 @@ object ClientSessionController {
             NetworkManager.clientKeyFromInvite = false
             NetworkManager.clearInviteRejected()
             NetworkManager.expectedMcastEpoch = null
+            ensureReconnectDiscovery(app, currentSettings.networkInterface)
             installStatusObserver(app, token)
             Log.i(TAG, "restored persistent client target " + restored.ip + ":" + restored.port)
             startAttempt(app, restored, token)
@@ -145,6 +147,10 @@ object ClientSessionController {
         restoreJob?.cancel()
         restoreJob = null
         clearContext?.let(::clearDesiredTarget)
+        if (reconnectOwnsDiscovery) {
+            NetworkManager.stopListeningForDevices()
+            reconnectOwnsDiscovery = false
+        }
         Log.i(TAG, "logical client session ended by explicit user stop")
     }
 
@@ -196,6 +202,10 @@ object ClientSessionController {
                     }
 
                     if (isNonRecoverable(context)) {
+                        if (reconnectOwnsDiscovery) {
+                            NetworkManager.stopListeningForDevices()
+                            reconnectOwnsDiscovery = false
+                        }
                         Log.w(
                             TAG,
                             "client session paused by non-recoverable state: " +
@@ -218,11 +228,16 @@ object ClientSessionController {
                             statusJob?.cancel()
                             statusJob = null
                             clearDesiredTarget(context)
+                            if (reconnectOwnsDiscovery) {
+                                NetworkManager.stopListeningForDevices()
+                                reconnectOwnsDiscovery = false
+                            }
                             context.stopService(Intent(context, ClientService::class.java))
                             Log.i(TAG, "transport session ended; keep-connected preference is off")
                             return@launch
                         }
 
+                        ensureReconnectDiscovery(context, latestSettings.networkInterface)
                         val refreshedTarget = refreshReconnectTarget(serverInfo)
                         desiredTarget = refreshedTarget
                         saveDesiredTarget(context, refreshedTarget)
@@ -269,9 +284,20 @@ object ClientSessionController {
                 if (!desiredConnected || token != generation) return@collect
                 if (status == context.getString(R.string.status_streaming)) {
                     reconnectAttempt = 0
+                    if (reconnectOwnsDiscovery) {
+                        NetworkManager.stopListeningForDevices()
+                        reconnectOwnsDiscovery = false
+                    }
                 }
             }
         }
+    }
+
+    private fun ensureReconnectDiscovery(context: Context, networkInterfaceName: String) {
+        if (NetworkManager.isListeningActive()) return
+        NetworkManager.startListeningForDevices(context.applicationContext, networkInterfaceName)
+        reconnectOwnsDiscovery = true
+        Log.i(TAG, "persistent reconnect temporarily owns discovery")
     }
 
     private fun refreshReconnectTarget(previous: ServerInfo): ServerInfo {
