@@ -804,6 +804,18 @@ fun SettingsScreenContent(
                                         }
                                     }
                                 )
+                                SettingsInfoItem(
+                                    title = stringResource(R.string.shizuku_backend_limit_title),
+                                    description = stringResource(R.string.shizuku_backend_limit_desc),
+                                    icon = Icons.Outlined.Info
+                                )
+                                if (appSettings.streamMic) {
+                                    SettingsInfoItem(
+                                        title = stringResource(R.string.shizuku_mic_mix_setting_title),
+                                        description = stringResource(R.string.shizuku_mic_mix_not_ready),
+                                        icon = Icons.Outlined.WarningAmber
+                                    )
+                                }
                             }
                         }
                     }
