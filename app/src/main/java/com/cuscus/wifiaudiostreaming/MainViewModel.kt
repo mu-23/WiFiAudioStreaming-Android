@@ -635,6 +635,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { settingsDataStore.saveClientTileIp(ip) }
     }
 
+    fun setClientPersistentConnection(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.saveClientPersistentConnection(enabled) }
+    }
+
     fun setAutoConnectEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsDataStore.setAutoConnectEnabled(enabled) }
     }
