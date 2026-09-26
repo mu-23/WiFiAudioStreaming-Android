@@ -74,14 +74,17 @@ jobs:
         run: |
           ./gradlew :app:assembleDebug --stacktrace
 
-      - name: Prepare artifact
+      - name: Prepare versioned artifact
         run: |
           set -euo pipefail
-          cp app/build/outputs/apk/debug/app-debug.apk WiFi-Audio-Bridge-Lab.apk
+          APK_NAME="WiFi-Audio-Bridge-Lab-${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
+          echo "LAB_APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
+          echo "Prepared $APK_NAME with version $WFAS_VERSION_NAME ($WFAS_VERSION_CODE)"
 
-      - name: Upload lab APK artifact
+      - name: Upload versioned lab APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Audio-Bridge-Lab
-          path: WiFi-Audio-Bridge-Lab.apk
+          name: WiFi-Audio-Bridge-Lab-${{ github.run_number }}
+          path: ${{ env.LAB_APK_NAME }}
           if-no-files-found: error
