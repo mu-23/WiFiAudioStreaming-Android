@@ -2918,14 +2918,24 @@ fun ExpressiveStreamingControlCenter(
                         }
                     }
 
+                    Spacer(modifier = Modifier.height(24.dp))
                     if (isServer) {
-                        Spacer(modifier = Modifier.height(24.dp))
                         val volume by NetworkManager.serverVolume.collectAsState()
-
                         ExpressiveVolumeSlider(
                             volume = volume,
                             onVolumeChange = { NetworkManager.serverVolume.value = it },
                             modifier = Modifier.fillMaxWidth(0.9f)
+                        )
+                    } else {
+                        val volume by NetworkManager.clientVolume.collectAsState()
+                        ExpressiveVolumeSlider(
+                            volume = volume,
+                            onVolumeChange = { NetworkManager.setClientVolume(it) },
+                            modifier = Modifier.fillMaxWidth(0.9f),
+                            showPresets = false,
+                            maxVolume = 1f,
+                            title = stringResource(R.string.playback_volume_card_title),
+                            subtitle = stringResource(R.string.playback_volume_hint)
                         )
                     }
                     // --------------------------------------
