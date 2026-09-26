@@ -772,7 +772,7 @@
     <string name="settings_item_language_title">Language</string>
     <string name="settings_item_language_desc">Choose the app interface language.</string>
     <string name="language_system">System</string>
-    <string name="language_system_desc">Follow the phone's language.</string>
+    <string name="language_system_desc">Follow the phone\'s language.</string>
     <string name="language_chinese_desc">Use Simplified Chinese.</string>
     <string name="language_english_desc">Use English.</string>
     <string name="shizuku_requires_android_11">Shizuku audio capture requires Android 11 or newer.</string>
@@ -785,9 +785,9 @@
     <string name="settings_item_keep_connected_desc">After Wi-Fi loss, timeout or sender restart, keep reconnecting until you tap Disconnect.</string>
     <string name="settings_group_updates">Updates</string>
     <string name="settings_item_auto_update_title">Check for updates automatically</string>
-    <string name="settings_item_auto_update_desc">On launch, check this project's GitHub releases for a newer version.</string>
+    <string name="settings_item_auto_update_desc">On launch, check this project\'s GitHub releases for a newer version.</string>
     <string name="settings_item_check_update_title">Check for updates now</string>
-    <string name="settings_item_check_update_desc">Tap to check this project's GitHub releases now.</string>
+    <string name="settings_item_check_update_desc">Tap to check this project\'s GitHub releases now.</string>
     <string name="settings_item_check_update_checking">Checking…</string>
     <string name="settings_item_open_shizuku_title">Open Shizuku</string>
     <string name="settings_item_open_shizuku_desc">Start or manage the Shizuku service used for direct system-audio capture.</string>
