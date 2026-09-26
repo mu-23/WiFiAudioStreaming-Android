@@ -40,8 +40,17 @@ jobs:
       - name: Restore stable lab signing key
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: wfas-audio-bridge-lab-debug-keystore-v1
+          path: .ci/lab-debug.keystore
+          key: wfas-audio-bridge-lab-debug-keystore-v2
+
+      - name: Ensure stable lab signing key
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          if [ ! -f .ci/lab-debug.keystore ]; then
+            keytool -genkeypair               -keystore .ci/lab-debug.keystore               -storepass android               -alias androiddebugkey               -keypass android               -dname "CN=WFAS Audio Bridge Lab,O=WFAS,C=US"               -keyalg RSA               -keysize 2048               -validity 10000
+          fi
+          echo "WFAS_LAB_KEYSTORE=$GITHUB_WORKSPACE/.ci/lab-debug.keystore" >> "$GITHUB_ENV"
 
 
       - name: Install Android 36 SDK
