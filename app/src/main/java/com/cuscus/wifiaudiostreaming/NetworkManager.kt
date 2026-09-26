@@ -134,8 +134,34 @@ object NetworkManager {
     private const val DISCOVERY_TTL_MS = 10_000L
     private const val UDP_QUEUE_SLOTS = 4
 
-    // --- GESTIONE VOLUME SERVER ANDROID ---
+    // --- GESTIONE VOLUME ---
+    /** Sender-side software gain for the stream sent over the network. */
     val serverVolume = MutableStateFlow(1.0f)
+
+    /** Receiver-side playback gain. */
+    val clientVolume = MutableStateFlow(1.0f)
+    private val clientPlaybackTracks =
+        java.util.Collections.newSetFromMap(
+            java.util.concurrent.ConcurrentHashMap<AudioTrack, Boolean>()
+        )
+
+    fun setClientVolume(value: Float) {
+        val safe = value.coerceIn(0f, 1f)
+        clientVolume.value = safe
+        clientPlaybackTracks.forEach { track ->
+            runCatching { track.setVolume(safe) }
+        }
+    }
+
+    private fun registerClientPlaybackTrack(track: AudioTrack) {
+        clientPlaybackTracks.add(track)
+        runCatching { track.setVolume(clientVolume.value.coerceIn(0f, 1f)) }
+    }
+
+    private fun unregisterClientPlaybackTrack(track: AudioTrack?) {
+        if (track != null) clientPlaybackTracks.remove(track)
+    }
+
     var isServerStreaming = false
 
     @Volatile var activePeerIp: String? = null
@@ -2320,6 +2346,7 @@ object NetworkManager {
                             trackBuilder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                         }
                         audioTrack = trackBuilder.build()
+                        registerClientPlaybackTrack(audioTrack!!)
                         val playout = PlayoutGovernor(
                             audioTrack!!, sampleRate, frameSize, effectiveLatencyMs, TAG
                         )
@@ -2743,6 +2770,7 @@ object NetworkManager {
                         }
                     } finally {
                         LinkMetrics.stop()
+                        unregisterClientPlaybackTrack(audioTrack)
                         audioTrack?.stop()
                         audioTrack?.release()
                         // Reset ambient visualizer so the background fades cleanly
@@ -2816,6 +2844,7 @@ object NetworkManager {
                             .setBufferSizeInBytes(playbackBufferSize)
                             .setTransferMode(AudioTrack.MODE_STREAM)
                             .build()
+                        registerClientPlaybackTrack(audioTrack)
 
                         val mcPlayout = PlayoutGovernor(
                             audioTrack, sampleRate, frameSize, mcLatencyMs, TAG
@@ -3109,6 +3138,7 @@ object NetworkManager {
                         }
                     } finally {
                         LinkMetrics.stop()
+                        unregisterClientPlaybackTrack(audioTrack)
                         audioTrack?.stop()
                         audioTrack?.release()
                         // Reset ambient visualizer so the background fades cleanly
