@@ -164,6 +164,7 @@ data class AppSettings(
     val clientTileIp: String = "",
     val autoConnectEnabled: Boolean = false,
     val autoConnectList: String = "",
+    val clientPersistentConnection: Boolean = true,
     val connectionSoundEnabled: Boolean = true,
     val disconnectionSoundEnabled: Boolean = true,
     val lastSeenChangelogVersion: String = "",
@@ -237,6 +238,7 @@ class SettingsDataStore(context: Context) {
         val CLIENT_TILE_IP = stringPreferencesKey("client_tile_ip")
         val AUTO_CONNECT_ENABLED = booleanPreferencesKey("auto_connect_enabled")
         val AUTO_CONNECT_LIST = stringPreferencesKey("auto_connect_list")
+        val CLIENT_PERSISTENT_CONNECTION = booleanPreferencesKey("client_persistent_connection")
         val CONNECTION_SOUND_ENABLED = booleanPreferencesKey("connection_sound_enabled")
         val DISCONNECTION_SOUND_ENABLED = booleanPreferencesKey("disconnection_sound_enabled")
         val AUTOMATION_SCRIPTS = stringPreferencesKey("automation_scripts")
@@ -385,6 +387,8 @@ class SettingsDataStore(context: Context) {
             clientTileIp = preferences[PreferencesKeys.CLIENT_TILE_IP] ?: "",
             autoConnectEnabled = preferences[PreferencesKeys.AUTO_CONNECT_ENABLED] ?: false,
             autoConnectList = preferences[PreferencesKeys.AUTO_CONNECT_LIST] ?: "",
+            clientPersistentConnection =
+                preferences[PreferencesKeys.CLIENT_PERSISTENT_CONNECTION] ?: true,
             connectionSoundEnabled = preferences[PreferencesKeys.CONNECTION_SOUND_ENABLED] ?: true,
             disconnectionSoundEnabled = preferences[PreferencesKeys.DISCONNECTION_SOUND_ENABLED] ?: true,
             hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
@@ -477,6 +481,12 @@ class SettingsDataStore(context: Context) {
     suspend fun saveClientTileIp(ip: String) {
         dataStore.edit { preferences ->
             preferences[PreferencesKeys.CLIENT_TILE_IP] = ip
+        }
+    }
+
+    suspend fun saveClientPersistentConnection(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CLIENT_PERSISTENT_CONNECTION] = enabled
         }
     }
 
