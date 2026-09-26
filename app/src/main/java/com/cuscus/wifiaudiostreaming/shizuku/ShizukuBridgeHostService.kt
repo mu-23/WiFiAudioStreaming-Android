@@ -23,6 +23,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -42,7 +45,10 @@ class ShizukuBridgeHostService : Service() {
             NotificationCenter.ID_SERVER,
             NotificationCenter.shizukuBridgeNotification(
                 this,
-                NetworkManager.connectionStatus.value.ifBlank { getString(com.cuscus.wifiaudiostreaming.R.string.shizuku_bridge_active) }
+                NetworkManager.connectionStatus.value.ifBlank {
+                    getString(com.cuscus.wifiaudiostreaming.R.string.shizuku_bridge_active)
+                },
+                NetworkManager.serverVolume.value
             )
         )
 
@@ -50,17 +56,29 @@ class ShizukuBridgeHostService : Service() {
 
         if (statusJob?.isActive != true) {
             statusJob = scope.launch {
-                NetworkManager.connectionStatus.collect { status ->
-                    NotificationCenter.post(
-                        this@ShizukuBridgeHostService,
-                        NotificationCenter.ID_SERVER,
-                        NotificationCenter.shizukuBridgeNotification(
+                combine(
+                    NetworkManager.connectionStatus,
+                    NetworkManager.serverVolume
+                ) { status, volume -> status to volume }
+                    .distinctUntilChanged()
+                    .conflate()
+                    .collect { (status, volume) ->
+                        ShizukuAudioBridgeManager.setVolume(volume)
+                        NotificationCenter.post(
                             this@ShizukuBridgeHostService,
-                            status.ifBlank { getString(com.cuscus.wifiaudiostreaming.R.string.shizuku_bridge_active) }
+                            NotificationCenter.ID_SERVER,
+                            NotificationCenter.shizukuBridgeNotification(
+                                this@ShizukuBridgeHostService,
+                                status.ifBlank {
+                                    getString(
+                                        com.cuscus.wifiaudiostreaming.R.string.shizuku_bridge_active
+                                    )
+                                },
+                                volume
+                            )
                         )
-                    )
-                    delay(350)
-                }
+                        delay(120)
+                    }
             }
         }
 
