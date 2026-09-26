@@ -160,7 +160,7 @@ data class AppSettings(
     // volte; spento, si sente sia qui che sul client.
     val muteRender: Boolean = true,
     // In unicast: quando il client si stacca finisce la sessione, non il server.
-    val serverPersist: Boolean = false,
+    val serverPersist: Boolean = true,
     val clientTileIp: String = "",
     val autoConnectEnabled: Boolean = false,
     val autoConnectList: String = "",
@@ -354,7 +354,7 @@ class SettingsDataStore(context: Context) {
             onboardingCompleted = preferences[PreferencesKeys.ONBOARDING_COMPLETED] ?: false,
             lastMulticastMode = preferences[PreferencesKeys.LAST_MULTICAST_MODE] ?: false,
             muteRender = preferences[PreferencesKeys.MUTE_RENDER] ?: true,
-            serverPersist = preferences[PreferencesKeys.SERVER_PERSIST] ?: false,
+            serverPersist = preferences[PreferencesKeys.SERVER_PERSIST] ?: true,
             networkInterface = preferences[PreferencesKeys.NETWORK_INTERFACE] ?: "Auto",
             rtpEnabled = preferences[PreferencesKeys.RTP_ENABLED] ?: false,
             rtpPort = preferences[PreferencesKeys.RTP_PORT] ?: 9094,
