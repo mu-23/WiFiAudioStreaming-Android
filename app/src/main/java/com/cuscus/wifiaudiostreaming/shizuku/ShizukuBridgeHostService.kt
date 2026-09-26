@@ -31,6 +31,7 @@ class ShizukuBridgeHostService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var statusJob: Job? = null
+    private var bridgeWatchJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -65,6 +66,18 @@ class ShizukuBridgeHostService : Service() {
         // If Android recreated the normal process but Shizuku's daemon
         // UserService survived, reattach to it instead of starting a new capture.
         ShizukuAudioBridgeManager.rebindExisting(this)
+
+        if (bridgeWatchJob?.isActive != true) {
+            bridgeWatchJob = scope.launch {
+                while (kotlinx.coroutines.isActive) {
+                    delay(1_000)
+                    if (!ShizukuAudioBridgeManager.refreshRemoteState(this@ShizukuBridgeHostService)) {
+                        stopSelf()
+                        break
+                    }
+                }
+            }
+        }
 
         return START_STICKY
     }
@@ -107,6 +120,7 @@ class ShizukuBridgeHostService : Service() {
         wakeLock = null
         wifiLock = null
         statusJob = null
+        bridgeWatchJob = null
         scope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         NotificationCenter.cancel(this, NotificationCenter.ID_SERVER)
