@@ -315,7 +315,7 @@
     <string name="mic_permission_required">Microphone permission is required.</string>
     <string name="mic_permission_why_button">Why?</string>
     <string name="mic_permission_explanation_title">Why is microphone permission needed?</string>
-    <string name="mic_permission_explanation_body">Starting from Android 10, capturing internal audio requires the MediaProjection API, which always requires the RECORD_AUDIO permission, even if you only intend to capture system audio and not the microphone. This is a precautionary measure enforced by the OS: the audio pipeline is initialized as a single unit, and the system requests the permission upfront without knowing in advance which source will be used. Additionally, some OEM implementations (Samsung, Xiaomi, and others) enforce this requirement more strictly than stock Android, making the permission effectively mandatory in all cases.</string>
+    <string name="mic_permission_explanation_body">Microphone permission is required when the microphone is actually captured, and by the legacy MediaProjection internal-audio backend. The Shizuku internal-audio backend does not need microphone permission.</string>
     <string name="server_audio_restart_hint">No audio on the other device? Try restarting this phone.</string>
 
     <string name="settings_group_automation">Automation &amp; Scripting</string>
@@ -757,5 +757,28 @@
     <string name="sdp_warn_no_rate">No sample rate in the descriptor: assuming 48000 Hz.</string>
     <string name="sdp_warn_channels">Unusual channel count: only 1 or 2 can be played.</string>
     <string name="notif_rtp_title">RTP stream</string>
+
+    <!-- Lab capture backend and language controls -->
+    <string name="settings_item_capture_backend_title">Internal audio capture</string>
+    <string name="settings_item_capture_backend_desc">Choose the internal-audio capture engine. Shizuku is the default; screen sharing is a legacy compatibility option only.</string>
+    <string name="capture_backend_shizuku_short">Shizuku</string>
+    <string name="capture_backend_legacy_short">Legacy</string>
+    <string name="capture_backend_shizuku_desc">Uses Shizuku shell privileges. No MediaProjection or screen-sharing authorization. Android 13+ keeps playback on the source device.</string>
+    <string name="capture_backend_legacy_desc">Uses Android MediaProjection. Requires screen-sharing authorization and is kept only for compatibility.</string>
+    <string name="shizuku_backend_info_title">Shizuku is the default</string>
+    <string name="shizuku_backend_info_desc">Start Shizuku first. Internal audio never silently falls back to screen sharing.</string>
+    <string name="settings_item_capture_buffer_title">Capture buffer</string>
+    <string name="settings_item_capture_buffer_desc">Requested AudioRecord buffer for microphone and legacy capture. Android may raise it to the device minimum.</string>
+    <string name="settings_item_language_title">Language</string>
+    <string name="settings_item_language_desc">Choose the app interface language.</string>
+    <string name="language_system">System</string>
+    <string name="language_system_desc">Follow the phone's language.</string>
+    <string name="language_chinese_desc">Use Simplified Chinese.</string>
+    <string name="language_english_desc">Use English.</string>
+    <string name="shizuku_requires_android_11">Shizuku audio capture requires Android 11 or newer.</string>
+    <string name="shizuku_unicast_only">The Shizuku backend currently supports WFAS unicast only. Disable multicast, RTP, HTTP, DLNA and Snapcast.</string>
+    <string name="shizuku_security_off_required">The Shizuku backend currently requires security mode OFF; authentication and encryption are not wired yet.</string>
+    <string name="shizuku_mic_mix_not_ready">Microphone mixing is not supported by the Shizuku backend yet. This session will send internal audio only.</string>
+    <string name="select_audio_source_first">Select an audio source before starting the server.</string>
 
 </resources>
