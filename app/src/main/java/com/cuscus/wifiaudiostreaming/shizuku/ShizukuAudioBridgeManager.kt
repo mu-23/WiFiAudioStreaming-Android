@@ -470,9 +470,10 @@ object ShizukuAudioBridgeManager {
     private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val rebindRunnable = Runnable {
         val context = appContext ?: return@Runnable
-        val config = pendingConfig ?: return@Runnable
-        if (!desiredRunning || bound || bindingInProgress || !isBinderReady()) return@Runnable
-        bindAndStart(context, config)
+        if (!desiredRunning || pendingConfig == null || bound || bindingInProgress || !isBinderReady()) {
+            return@Runnable
+        }
+        rebindExisting(context)
     }
 
     private fun scheduleUserServiceReconnect() {
@@ -497,11 +498,28 @@ object ShizukuAudioBridgeManager {
     private fun fail(context: Context, detail: String) {
         Log.e(TAG, detail)
         Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
+
+        desiredRunning = false
+        pendingConfig = null
+        reattachingExisting = false
+        reconnectHandler.removeCallbacks(rebindRunnable)
+        clearDesiredConfig(context)
+
         NetworkManager.stopBroadcastingPresence()
         NetworkManager.isServerStreaming = false
         NetworkManager.isStreamingCurrent.value = false
         NetworkManager.connectionStatus.value = detail
         _state.value = State.Error(detail)
+
+        runCatching { service?.stopBridge() }
+        if (bound) {
+            runCatching {
+                Shizuku.unbindUserService(userServiceArgs(context), serviceConnection, true)
+            }
+        }
+        service = null
+        bound = false
+        bindingInProgress = false
         context.stopService(Intent(context, ShizukuBridgeHostService::class.java))
     }
 
