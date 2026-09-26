@@ -823,4 +823,10 @@
     <string name="shizuku_error_bridge_start">Shizuku bridge start failed: %1$s</string>
     <string name="shizuku_bridge_active">Shizuku audio bridge active</string>
 
+    <string name="playback_volume_card_title">Playback volume</string>
+    <string name="notif_tap_volume">Tap the notification to drag the volume slider</string>
+    <string name="volume_popup_sender_title">Transmission volume</string>
+    <string name="volume_popup_receiver_title">Playback volume</string>
+    <string name="volume_popup_hint">Tap or drag the slider; press Back to close</string>
+
 </resources>
