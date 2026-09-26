@@ -8,7 +8,10 @@
 package com.cuscus.wifiaudiostreaming.shizuku;
 
 import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
+import android.content.AttributionSource;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -60,6 +63,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
     private volatile AudioRecord recorder;
     private volatile Object registeredAudioPolicy;
     private volatile Class<?> registeredAudioPolicyClass;
+    private volatile String activeCaptureMode = "none";
 
     public ShizukuAudioBridgeService() {
         this.context = null;
@@ -106,23 +110,33 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         safePacketBytes -= safePacketBytes % frameSize;
         if (safePacketBytes < frameSize) safePacketBytes = frameSize;
 
-        final String captureMode;
+        String captureMode;
         try {
             if (Build.VERSION.SDK_INT >= 33) {
                 if (context == null) {
                     throw new IllegalStateException("Shizuku v13+ Context is required for AudioPolicy");
                 }
-                recorder = createPlaybackCapture(sampleRate, channels, keepPlayingOnDevice);
-                captureMode = keepPlayingOnDevice
-                        ? "AudioPolicy LOOP_BACK_RENDER"
-                        : "AudioPolicy LOOP_BACK";
+                try {
+                    recorder = createPlaybackCapture(sampleRate, channels, keepPlayingOnDevice);
+                    captureMode = activeCaptureMode;
+                } catch (Throwable policyFailure) {
+                    Log.w(TAG, "AudioPolicy playback capture failed, trying REMOTE_SUBMIX fallback", policyFailure);
+                    releaseCapture();
+                    recorder = createRemoteSubmixCapture(sampleRate, channels, safePacketBytes);
+                    captureMode = "REMOTE_SUBMIX fallback";
+                    activeCaptureMode = captureMode;
+                }
             } else if (Build.VERSION.SDK_INT >= 30) {
                 recorder = createRemoteSubmixCapture(sampleRate, channels, safePacketBytes);
                 captureMode = "REMOTE_SUBMIX compatibility";
+                activeCaptureMode = captureMode;
             } else {
                 throw new UnsupportedOperationException("system audio requires Android 11+");
             }
 
+            if (recorder == null || recorder.getState() != AudioRecord.STATE_INITIALIZED) {
+                throw new IllegalStateException("AudioRecord is not initialized");
+            }
             recorder.startRecording();
             if (recorder.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
                 throw new IllegalStateException("AudioRecord did not enter RECORDSTATE_RECORDING");
@@ -456,6 +470,63 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             int channels,
             boolean keepPlayingOnDevice
     ) throws Exception {
+        Throwable broadFailure;
+        try {
+            AudioRecord record = createAudioPolicyCapture(
+                    sampleRate,
+                    channels,
+                    keepPlayingOnDevice,
+                    new int[] {
+                            AudioAttributes.USAGE_MEDIA,
+                            AudioAttributes.USAGE_GAME,
+                            AudioAttributes.USAGE_UNKNOWN
+                    },
+                    true
+            );
+            activeCaptureMode = keepPlayingOnDevice
+                    ? "AudioPolicy LOOP_BACK_RENDER"
+                    : "AudioPolicy LOOP_BACK";
+            return record;
+        } catch (Throwable t) {
+            broadFailure = t;
+            Log.w(TAG, "Broad AudioPolicy mix failed, retrying scrcpy-compatible MEDIA-only mix", t);
+        }
+
+        try {
+            AudioRecord record = createAudioPolicyCapture(
+                    sampleRate,
+                    channels,
+                    keepPlayingOnDevice,
+                    new int[] { AudioAttributes.USAGE_MEDIA },
+                    false
+            );
+            activeCaptureMode = keepPlayingOnDevice
+                    ? "AudioPolicy scrcpy-compat LOOP_BACK_RENDER"
+                    : "AudioPolicy scrcpy-compat LOOP_BACK";
+            return record;
+        } catch (Throwable t) {
+            IllegalStateException combined = new IllegalStateException(
+                    "AudioPolicy capture failed; broad=" +
+                            broadFailure.getClass().getSimpleName() + ": " +
+                            String.valueOf(broadFailure.getMessage()) +
+                            "; scrcpy-compat=" +
+                            t.getClass().getSimpleName() + ": " +
+                            String.valueOf(t.getMessage()),
+                    t
+            );
+            combined.addSuppressed(broadFailure);
+            throw combined;
+        }
+    }
+
+    @SuppressLint({"PrivateApi", "WrongConstant", "MissingPermission"})
+    private AudioRecord createAudioPolicyCapture(
+            int sampleRate,
+            int channels,
+            boolean keepPlayingOnDevice,
+            int[] usages,
+            boolean enableVoiceCaptureBeforeBuild
+    ) throws Exception {
         Class<?> mixingRuleClass = Class.forName("android.media.audiopolicy.AudioMixingRule");
         Class<?> mixingRuleBuilderClass = Class.forName("android.media.audiopolicy.AudioMixingRule$Builder");
 
@@ -466,25 +537,18 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 .getMethod("setTargetMixRole", int.class)
                 .invoke(mixingRuleBuilder, mixRolePlayers);
 
-        // This method exists on the Android versions where scrcpy uses this path.
-        // Call it before build(); OEMs that omit it can still capture media/game.
-        try {
-            mixingRuleBuilderClass
-                    .getMethod("voiceCommunicationCaptureAllowed", boolean.class)
-                    .invoke(mixingRuleBuilder, true);
-        } catch (Throwable ignored) {
-            // Optional for our MEDIA/GAME use case. Do not let an OEM-specific
-            // hidden-API quirk disable ordinary playback capture.
+        if (enableVoiceCaptureBeforeBuild) {
+            try {
+                mixingRuleBuilderClass
+                        .getMethod("voiceCommunicationCaptureAllowed", boolean.class)
+                        .invoke(mixingRuleBuilder, true);
+            } catch (Throwable ignored) {
+                // Optional. MEDIA/GAME capture must not depend on this OEM-specific path.
+            }
         }
 
         int ruleMatchUsage = mixingRuleClass.getField("RULE_MATCH_ATTRIBUTE_USAGE").getInt(null);
         Method addMixRule = mixingRuleBuilderClass.getMethod("addMixRule", int.class, Object.class);
-
-        int[] usages = new int[] {
-                AudioAttributes.USAGE_MEDIA,
-                AudioAttributes.USAGE_GAME,
-                AudioAttributes.USAGE_UNKNOWN
-        };
         for (int usage : usages) {
             AudioAttributes attributes = new AudioAttributes.Builder()
                     .setUsage(usage)
@@ -493,6 +557,17 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         }
 
         Object mixingRule = mixingRuleBuilderClass.getMethod("build").invoke(mixingRuleBuilder);
+
+        // scrcpy invokes this after build(). Keep the MEDIA-only retry as close as
+        // possible to upstream behavior without letting this optional method fail.
+        if (!enableVoiceCaptureBeforeBuild) {
+            try {
+                mixingRuleBuilderClass
+                        .getMethod("voiceCommunicationCaptureAllowed", boolean.class)
+                        .invoke(mixingRuleBuilder, true);
+            } catch (Throwable ignored) {
+            }
+        }
 
         Class<?> audioMixClass = Class.forName("android.media.audiopolicy.AudioMix");
         Class<?> audioMixBuilderClass = Class.forName("android.media.audiopolicy.AudioMix$Builder");
@@ -525,9 +600,11 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
 
         Class<?> audioPolicyClass = Class.forName("android.media.audiopolicy.AudioPolicy");
         Class<?> audioPolicyBuilderClass = Class.forName("android.media.audiopolicy.AudioPolicy$Builder");
+
+        Context policyContext = createShellAudioContext(context);
         Object audioPolicyBuilder = audioPolicyBuilderClass
                 .getConstructor(Context.class)
-                .newInstance(context);
+                .newInstance(policyContext);
         audioPolicyBuilderClass
                 .getMethod("addMix", audioMixClass)
                 .invoke(audioPolicyBuilder, audioMix);
@@ -541,20 +618,37 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             throw new IllegalStateException("registerAudioPolicyStatic returned " + result);
         }
 
-        Method createSink = audioPolicyClass.getMethod("createAudioRecordSink", audioMixClass);
-        AudioRecord resultRecord = (AudioRecord) createSink.invoke(audioPolicy, audioMix);
-        if (resultRecord == null) {
-            unregisterPolicy(audioPolicy, audioPolicyClass);
-            throw new IllegalStateException("createAudioRecordSink returned null");
-        }
+        AudioRecord resultRecord = null;
+        try {
+            Method createSink = audioPolicyClass.getMethod("createAudioRecordSink", audioMixClass);
+            resultRecord = (AudioRecord) createSink.invoke(audioPolicy, audioMix);
+            if (resultRecord == null) {
+                throw new IllegalStateException("createAudioRecordSink returned null");
+            }
+            if (resultRecord.getState() != AudioRecord.STATE_INITIALIZED) {
+                throw new IllegalStateException(
+                        "createAudioRecordSink returned uninitialized AudioRecord state=" +
+                                resultRecord.getState()
+                );
+            }
 
-        registeredAudioPolicy = audioPolicy;
-        registeredAudioPolicyClass = audioPolicyClass;
-        return resultRecord;
+            registeredAudioPolicy = audioPolicy;
+            registeredAudioPolicyClass = audioPolicyClass;
+            return resultRecord;
+        } catch (Throwable t) {
+            if (resultRecord != null) {
+                try {
+                    resultRecord.release();
+                } catch (Throwable ignored) {
+                }
+            }
+            unregisterPolicy(audioPolicy, audioPolicyClass);
+            throw t;
+        }
     }
 
     @SuppressLint({"WrongConstant", "MissingPermission"})
-    private static AudioRecord createRemoteSubmixCapture(
+    private AudioRecord createRemoteSubmixCapture(
             int sampleRate,
             int channels,
             int packetBytes
@@ -571,13 +665,71 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             throw new IllegalStateException("unsupported AudioRecord format: " + minBuffer);
         }
 
-        return new AudioRecord(
-                MediaRecorder.AudioSource.REMOTE_SUBMIX,
-                sampleRate,
-                channelMask,
-                AudioFormat.ENCODING_PCM_16BIT,
-                Math.max(minBuffer, packetBytes * 8)
-        );
+        AudioFormat format = new AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(sampleRate)
+                .setChannelMask(channelMask)
+                .build();
+
+        AudioRecord.Builder builder = new AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.REMOTE_SUBMIX)
+                .setAudioFormat(format)
+                .setBufferSizeInBytes(Math.max(minBuffer, packetBytes * 8));
+
+        if (Build.VERSION.SDK_INT >= 31 && context != null) {
+            builder.setContext(createShellAudioContext(context));
+        }
+
+        AudioRecord record = builder.build();
+        if (record.getState() != AudioRecord.STATE_INITIALIZED) {
+            try {
+                record.release();
+            } catch (Throwable ignored) {
+            }
+            throw new IllegalStateException("REMOTE_SUBMIX AudioRecord is not initialized");
+        }
+        return record;
+    }
+
+    private static Context createShellAudioContext(Context base) {
+        if (base == null || Build.VERSION.SDK_INT < 31) {
+            return base;
+        }
+        return new ShellAudioContext(base);
+    }
+
+    @TargetApi(31)
+    private static final class ShellAudioContext extends ContextWrapper {
+        ShellAudioContext(Context base) {
+            super(base);
+        }
+
+        @Override
+        public String getPackageName() {
+            return "com.android.shell";
+        }
+
+        @Override
+        public String getOpPackageName() {
+            return "com.android.shell";
+        }
+
+        @Override
+        public AttributionSource getAttributionSource() {
+            return new AttributionSource.Builder(SHELL_UID)
+                    .setPackageName("com.android.shell")
+                    .build();
+        }
+
+        @Override
+        public Context getApplicationContext() {
+            return this;
+        }
+
+        @Override
+        public Context createPackageContext(String packageName, int flags) {
+            return this;
+        }
     }
 
     private synchronized void releaseCapture() {
