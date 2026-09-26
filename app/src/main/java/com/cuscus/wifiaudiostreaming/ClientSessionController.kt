@@ -17,7 +17,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -151,11 +150,11 @@ object ClientSessionController {
                 networkInterfaceName = currentSettings.networkInterface,
                 connectionSoundEnabled = currentSettings.connectionSoundEnabled,
                 disconnectionSoundEnabled = currentSettings.disconnectionSoundEnabled,
-                onServerDisconnected = {
+                onServerDisconnected = disconnected@{
                     attemptInFlight = false
 
                     if (!desiredConnected || token != generation) {
-                        return@startClient
+                        return@disconnected
                     }
 
                     if (isNonRecoverable(context)) {
@@ -164,7 +163,7 @@ object ClientSessionController {
                             "client session paused by non-recoverable state: " +
                                 NetworkManager.connectionStatus.value
                         )
-                        return@startClient
+                        return@disconnected
                     }
 
                     scheduleReconnect(context, serverInfo, token)
