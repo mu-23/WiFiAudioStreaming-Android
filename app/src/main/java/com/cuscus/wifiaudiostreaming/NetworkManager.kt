@@ -2315,6 +2315,9 @@ object NetworkManager {
                             val k = requestKeyFromUi(wrong) ?: return false
                             if (k.isBlank()) return false
                             clientKey = k
+                            // Keep the accepted key in process memory so a transient
+                            // reconnect does not ask the user for the same key again.
+                            clientPresharedKey = k
                             proved = false
                             helloMsg = "${clientHelloMessage()};cnonce=$cnonce"
                             sock.send(Datagram(buildPacket { writeText(helloMsg) }, remoteAddress))
@@ -2384,6 +2387,8 @@ object NetworkManager {
                                             return@launch
                                         }
                                         clientKey = k
+                                        // Reuse it for automatic reconnects in this app process.
+                                        clientPresharedKey = k
                                         handshakeDeadline = System.currentTimeMillis() + 30000
                                     }
                                     val snonce = WfasAuth.getToken(ackMsg, "snonce") ?: ""
