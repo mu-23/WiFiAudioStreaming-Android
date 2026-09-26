@@ -182,7 +182,7 @@ object ScriptExecutor {
     }
 
     fun stop(context: Context) {
-        ClientSessionController.userDisconnect()
+        ClientSessionController.userDisconnect(context)
         if (ShizukuAudioBridgeManager.isActive()) {
             ShizukuAudioBridgeManager.stop(context)
         }
