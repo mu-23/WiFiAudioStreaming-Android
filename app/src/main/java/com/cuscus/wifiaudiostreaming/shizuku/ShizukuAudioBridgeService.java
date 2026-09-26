@@ -16,8 +16,10 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.AudioRecord;
+import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Process;
@@ -64,6 +66,8 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
     private volatile Thread bridgeThread;
     private volatile DatagramSocket socket;
     private volatile AudioRecord recorder;
+    private volatile AudioTrack localMonitorTrack;
+    private volatile float streamVolume = 1.0f;
     private volatile Object registeredAudioPolicy;
     private volatile Class<?> registeredAudioPolicyClass;
     private volatile String activeCaptureMode = "none";
@@ -156,6 +160,15 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             if (recorder.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
                 throw new IllegalStateException("AudioRecord did not enter RECORDSTATE_RECORDING");
             }
+
+            if (keepPlayingOnDevice && captureMode.startsWith("REMOTE_SUBMIX")) {
+                localMonitorTrack = createLocalMonitorTrack(sampleRate, channels);
+                if (localMonitorTrack != null) {
+                    Log.i(TAG, "REMOTE_SUBMIX local speaker mirror enabled");
+                } else {
+                    Log.w(TAG, "REMOTE_SUBMIX captured audio but local speaker mirror could not start");
+                }
+            }
         } catch (Throwable t) {
             releaseCapture();
             status = "error: build=" + BuildConfig.VERSION_CODE + " " + t.getClass().getSimpleName() + ": " + String.valueOf(t.getMessage());
@@ -195,6 +208,14 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
     @Override
     public int getBuildVersion() {
         return BuildConfig.VERSION_CODE;
+    }
+
+    @Override
+    public void setVolume(float volume) {
+        if (Float.isNaN(volume) || Float.isInfinite(volume)) {
+            return;
+        }
+        streamVolume = Math.max(0.0f, Math.min(volume, 2.0f));
     }
 
 
@@ -436,6 +457,23 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 }
 
                 int alignedRead = read - (read % frameSize);
+
+                AudioTrack monitor = localMonitorTrack;
+                if (monitor != null && alignedRead > 0) {
+                    try {
+                        monitor.write(
+                                readBuffer,
+                                0,
+                                alignedRead,
+                                AudioTrack.WRITE_NON_BLOCKING
+                        );
+                    } catch (Throwable t) {
+                        Log.w(TAG, "local monitor write failed: " + t.getMessage());
+                    }
+                }
+
+                applyPcmGainInPlace(readBuffer, alignedRead, streamVolume);
+
                 int offset = 0;
                 while (offset < alignedRead && running.get() && sessionAlive.get()) {
                     int chunk = Math.min(packetBytes, alignedRead - offset);
@@ -860,7 +898,104 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         }
     }
 
+    private AudioTrack createLocalMonitorTrack(int sampleRate, int channels) {
+        try {
+            int channelMask = channels == 2
+                    ? AudioFormat.CHANNEL_OUT_STEREO
+                    : AudioFormat.CHANNEL_OUT_MONO;
+            int minBuffer = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    channelMask,
+                    AudioFormat.ENCODING_PCM_16BIT
+            );
+            if (minBuffer <= 0) {
+                return null;
+            }
+
+            AudioAttributes.Builder attributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC);
+            if (Build.VERSION.SDK_INT >= 29) {
+                attributes.setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE);
+            }
+
+            AudioTrack track = new AudioTrack.Builder()
+                    .setAudioAttributes(attributes.build())
+                    .setAudioFormat(
+                            new AudioFormat.Builder()
+                                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                    .setSampleRate(sampleRate)
+                                    .setChannelMask(channelMask)
+                                    .build()
+                    )
+                    .setBufferSizeInBytes(Math.max(minBuffer, 8192))
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build();
+
+            try {
+                Context c = context != null ? context : createSystemShellAudioContext(context);
+                if (c != null) {
+                    AudioManager audioManager = c.getSystemService(AudioManager.class);
+                    if (audioManager != null) {
+                        AudioDeviceInfo[] devices =
+                                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+                        for (AudioDeviceInfo device : devices) {
+                            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                                track.setPreferredDevice(device);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "could not pin local monitor to speaker: " + t.getMessage());
+            }
+
+            track.play();
+            return track;
+        } catch (Throwable t) {
+            Log.w(TAG, "local monitor creation failed: " + t.getMessage(), t);
+            return null;
+        }
+    }
+
+    private static void applyPcmGainInPlace(byte[] pcm, int bytes, float gain) {
+        if (pcm == null || bytes < 2 || Math.abs(gain - 1.0f) < 0.0001f) {
+            return;
+        }
+        int limit = bytes - (bytes % 2);
+        for (int i = 0; i < limit; i += 2) {
+            int sample = (short) ((pcm[i] & 0xFF) | (pcm[i + 1] << 8));
+            int scaled = Math.round(sample * gain);
+            if (scaled > Short.MAX_VALUE) scaled = Short.MAX_VALUE;
+            if (scaled < Short.MIN_VALUE) scaled = Short.MIN_VALUE;
+            pcm[i] = (byte) (scaled & 0xFF);
+            pcm[i + 1] = (byte) ((scaled >>> 8) & 0xFF);
+        }
+    }
+
     private synchronized void releaseCapture() {
+        AudioTrack monitor = localMonitorTrack;
+        localMonitorTrack = null;
+        if (monitor != null) {
+            try {
+                monitor.pause();
+            } catch (Throwable ignored) {
+            }
+            try {
+                monitor.flush();
+            } catch (Throwable ignored) {
+            }
+            try {
+                monitor.stop();
+            } catch (Throwable ignored) {
+            }
+            try {
+                monitor.release();
+            } catch (Throwable ignored) {
+            }
+        }
+
         AudioRecord r = recorder;
         recorder = null;
         if (r != null) {
