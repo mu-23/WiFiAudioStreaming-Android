@@ -1,3 +1,6 @@
+val ciVersionCode = System.getenv("WFAS_VERSION_CODE")?.toIntOrNull()
+val ciVersionName = System.getenv("WFAS_VERSION_NAME")?.takeIf { it.isNotBlank() }
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -17,8 +20,11 @@ android {
         applicationId = "com.cuscus.wifiaudiostreaming"
         minSdk = 24
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.2.1"
+        // CI builds use a monotonically increasing versionCode so each signed
+        // Chinese build can upgrade the previous one in-place. Local/upstream
+        // builds keep the original version metadata.
+        versionCode = ciVersionCode ?: 11
+        versionName = ciVersionName ?: "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
