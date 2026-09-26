@@ -244,6 +244,38 @@ object ShizukuAudioBridgeManager {
     fun isActive(): Boolean =
         desiredRunning || _state.value is State.Running
 
+    fun refreshRemoteState(context: Context): Boolean {
+        val remote = service ?: return isActive()
+        val detail = runCatching { remote.getStatus() }.getOrNull() ?: return isActive()
+
+        if (detail == "idle" && _state.value is State.Running) {
+            val app = context.applicationContext
+            val oldConfig = pendingConfig
+            desiredRunning = false
+            pendingConfig = null
+            reattachingExisting = false
+            clearDesiredConfig(app)
+            NetworkManager.stopBroadcastingPresence()
+            NetworkManager.announceServerGone(
+                app,
+                oldConfig?.networkInterfaceName ?: "Auto"
+            )
+            NetworkManager.isServerStreaming = false
+            NetworkManager.isStreamingCurrent.value = false
+            NetworkManager.connectionStatus.value = app.getString(R.string.status_idle)
+            _state.value = State.Idle
+            Log.i(TAG, "remote bridge became idle; cleared logical server state")
+            return false
+        }
+
+        if (detail.startsWith("error:", ignoreCase = true) && _state.value is State.Running) {
+            fail(context.applicationContext, detail)
+            return false
+        }
+
+        return isActive()
+    }
+
     private fun begin(context: Context, config: Config) {
         if (!isBinderReady()) {
             val detail = context.getString(R.string.shizuku_status_not_running)
