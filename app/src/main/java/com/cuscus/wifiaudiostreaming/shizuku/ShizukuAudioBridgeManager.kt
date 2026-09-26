@@ -138,7 +138,7 @@ object ShizukuAudioBridgeManager {
         }
         if (desiredRunning) {
             _state.value = State.WaitingForShizuku
-            NetworkManager.connectionStatus.value = context.getString(R.string.shizuku_status_stopped_resume)
+            NetworkManager.connectionStatus.value = context?.getString(R.string.shizuku_status_stopped_resume) ?: "Shizuku stopped; connection intent kept. Restart Shizuku to resume."
         }
     }
 
