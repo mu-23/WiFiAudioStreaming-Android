@@ -829,4 +829,5 @@
     <string name="volume_popup_receiver_title">Playback volume</string>
     <string name="volume_popup_hint">Tap or drag the slider; press Back to close</string>
 
+    <string name="playback_volume_hint">Controls playback volume on this device without changing the sender.</string>
 </resources>
