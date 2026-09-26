@@ -55,6 +55,8 @@ object ShizukuAudioBridgeManager {
     private var service: IShizukuAudioBridge? = null
     @Volatile
     private var bound = false
+    @Volatile
+    private var bindingInProgress = false
 
     private var appContext: Context? = null
     private var listenersInstalled = false
@@ -62,6 +64,7 @@ object ShizukuAudioBridgeManager {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             service = IShizukuAudioBridge.Stub.asInterface(binder)
+            bindingInProgress = false
             bound = true
             Log.i(TAG, "UserService connected: $name")
             val context = appContext ?: return
@@ -86,6 +89,7 @@ object ShizukuAudioBridgeManager {
 
         override fun onServiceDisconnected(name: ComponentName) {
             service = null
+            bindingInProgress = false
             bound = false
             Log.w(TAG, "UserService disconnected: $name")
             if (desiredRunning) {
@@ -119,6 +123,7 @@ object ShizukuAudioBridgeManager {
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
         service = null
+        bindingInProgress = false
         bound = false
         if (desiredRunning) {
             _state.value = State.WaitingForShizuku
@@ -149,6 +154,7 @@ object ShizukuAudioBridgeManager {
                 Shizuku.unbindUserService(userServiceArgs(app), serviceConnection, removeUserService)
             }
         }
+        bindingInProgress = false
         bound = false
 
         app.stopService(Intent(app, ShizukuBridgeHostService::class.java))
@@ -167,12 +173,12 @@ object ShizukuAudioBridgeManager {
         appContext = app
         ensureListeners()
         if (!isBinderReady()) return
-        if (bound) return
+        if (bound || bindingInProgress) return
 
         runCatching {
             val version = Shizuku.peekUserService(userServiceArgs(app), serviceConnection)
             if (version >= 0) {
-                bound = true
+                bindingInProgress = true
                 Log.i(TAG, "reattaching to existing UserService version=$version")
             }
         }.onFailure {
@@ -223,13 +229,15 @@ object ShizukuAudioBridgeManager {
             startRemote(context, config)
             return
         }
+        if (bindingInProgress) return
 
         _state.value = State.Binding
         NetworkManager.connectionStatus.value = "Starting Shizuku audio bridge"
+        bindingInProgress = true
         runCatching {
             Shizuku.bindUserService(userServiceArgs(context), serviceConnection)
-            bound = true
         }.onFailure {
+            bindingInProgress = false
             bound = false
             fail(context, "Cannot bind Shizuku UserService: ${it.message}")
         }
