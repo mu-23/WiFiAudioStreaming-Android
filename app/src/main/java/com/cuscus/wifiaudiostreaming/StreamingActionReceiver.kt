@@ -32,18 +32,6 @@ class StreamingActionReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun stopEverything(context: Context) {
-        ClientSessionController.userDisconnect(context)
-        if (ShizukuAudioBridgeManager.isActive()) {
-            ShizukuAudioBridgeManager.stop(context)
-        }
-        NetworkManager.stopStreaming(context)
-        context.stopService(Intent(context, AudioCaptureService::class.java))
-        context.stopService(Intent(context, ClientService::class.java))
-        context.stopService(Intent(context, AutoConnectService::class.java))
-        NotificationCenter.cancelAll(context)
-    }
-
     private fun shiftVolume(delta: Float) {
         NetworkManager.serverVolume.value =
             NotificationCenter.nudgeVolume(NetworkManager.serverVolume.value, delta)
@@ -53,5 +41,24 @@ class StreamingActionReceiver : BroadcastReceiver() {
         const val ACTION_STOP_STREAMING = "com.cuscus.wifiaudiostreaming.ACTION_STOP_STREAMING"
         const val ACTION_VOLUME_UP = "com.cuscus.wifiaudiostreaming.ACTION_VOLUME_UP"
         const val ACTION_VOLUME_DOWN = "com.cuscus.wifiaudiostreaming.ACTION_VOLUME_DOWN"
+
+        /**
+         * One authoritative user-requested shutdown path.
+         *
+         * Swiping the app away from Recents counts as an explicit disconnect,
+         * unlike silence, network loss or normal process recreation.
+         */
+        fun stopEverything(context: Context) {
+            val app = context.applicationContext
+            ClientSessionController.userDisconnect(app)
+            if (ShizukuAudioBridgeManager.isActive()) {
+                ShizukuAudioBridgeManager.stop(app)
+            }
+            NetworkManager.stopStreaming(app)
+            app.stopService(Intent(app, AudioCaptureService::class.java))
+            app.stopService(Intent(app, ClientService::class.java))
+            app.stopService(Intent(app, AutoConnectService::class.java))
+            NotificationCenter.cancelAll(app)
+        }
     }
 }
