@@ -737,10 +737,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopStreaming() {
-        // Only an explicit user stop clears persistent client/server intents.
-        ClientSessionController.userDisconnect()
-
         val app = getApplication<Application>()
+        // Only an explicit user stop clears persistent client/server intents.
+        ClientSessionController.userDisconnect(app)
         if (ShizukuAudioBridgeManager.isActive()) {
             ShizukuAudioBridgeManager.stop(app)
         }
