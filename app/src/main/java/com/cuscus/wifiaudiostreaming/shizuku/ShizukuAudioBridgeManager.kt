@@ -17,6 +17,7 @@ import android.os.RemoteException
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.cuscus.wifiaudiostreaming.BuildConfig
 import com.cuscus.wifiaudiostreaming.NetworkManager
 import com.cuscus.wifiaudiostreaming.R
 import com.cuscus.wifiaudiostreaming.StreamAudioFormat
@@ -27,7 +28,7 @@ import rikka.shizuku.Shizuku
 object ShizukuAudioBridgeManager {
     private const val TAG = "WFAS_SHIZUKU_APP"
     private const val REQUEST_CODE_PERMISSION = 0x5746
-    private const val USER_SERVICE_VERSION = 3
+    private val USER_SERVICE_VERSION: Int = BuildConfig.VERSION_CODE
     private const val RUNTIME_PREFS = "wfas_shizuku_runtime"
 
     data class Config(
