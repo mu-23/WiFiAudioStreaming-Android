@@ -291,6 +291,12 @@ object ShizukuAudioBridgeManager {
     fun isActive(): Boolean =
         desiredRunning || _state.value is State.Running
 
+    fun setVolume(volume: Float) {
+        val safe = volume.coerceIn(0f, 2f)
+        runCatching { service?.setVolume(safe) }
+            .onFailure { Log.w(TAG, "could not update Shizuku stream volume", it) }
+    }
+
     fun refreshRemoteState(context: Context): Boolean {
         val remote = service ?: return isActive()
         val detail = runCatching { remote.getStatus() }.getOrNull() ?: return isActive()
@@ -416,7 +422,9 @@ object ShizukuAudioBridgeManager {
                 config.packetBytes,
                 config.keepPlayingOnDevice,
                 config.persistAfterClient
-            )
+            ).also {
+                remote.setVolume(NetworkManager.serverVolume.value.coerceIn(0f, 2f))
+            }
         } catch (e: RemoteException) {
             fail(context, context.getString(R.string.shizuku_error_remote_call, e.message ?: "unknown"))
             return
