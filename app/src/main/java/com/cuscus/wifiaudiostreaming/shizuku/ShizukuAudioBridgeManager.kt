@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.cuscus.wifiaudiostreaming.NetworkManager
 import com.cuscus.wifiaudiostreaming.R
+import com.cuscus.wifiaudiostreaming.StreamAudioFormat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import rikka.shizuku.Shizuku
@@ -32,7 +33,8 @@ object ShizukuAudioBridgeManager {
         val sampleRate: Int = 48_000,
         val channels: Int = 2,
         val packetBytes: Int = 512,
-        val keepPlayingOnDevice: Boolean = true
+        val keepPlayingOnDevice: Boolean = true,
+        val networkInterfaceName: String = "Auto"
     )
 
     sealed class State {
@@ -125,6 +127,14 @@ object ShizukuAudioBridgeManager {
         service = null
         bindingInProgress = false
         bound = false
+        val context = appContext
+        if (context != null) {
+            NetworkManager.stopBroadcastingPresence()
+            NetworkManager.announceServerGone(
+                context,
+                pendingConfig?.networkInterfaceName ?: "Auto"
+            )
+        }
         if (desiredRunning) {
             _state.value = State.WaitingForShizuku
             NetworkManager.connectionStatus.value =
@@ -143,8 +153,15 @@ object ShizukuAudioBridgeManager {
 
     fun stop(context: Context, removeUserService: Boolean = true) {
         val app = context.applicationContext
+        val oldConfig = pendingConfig
         desiredRunning = false
         pendingConfig = null
+
+        NetworkManager.stopBroadcastingPresence()
+        NetworkManager.announceServerGone(
+            app,
+            oldConfig?.networkInterfaceName ?: "Auto"
+        )
 
         runCatching { service?.stopBridge() }
         service = null
@@ -268,6 +285,22 @@ object ShizukuAudioBridgeManager {
             return
         }
 
+        // The privileged process owns capture + UDP. Discovery stays in the
+        // ordinary app process so receivers can find this sender automatically.
+        NetworkManager.configureSecurity("OFF", "", false)
+        NetworkManager.startBroadcastingPresence(
+            context = context,
+            isMulticast = false,
+            streamingPort = config.port,
+            networkInterfaceName = config.networkInterfaceName,
+            rtpEnabled = false,
+            audioFormat = StreamAudioFormat(
+                sampleRate = config.sampleRate,
+                channels = config.channels,
+                bitDepth = 16
+            )
+        )
+
         NetworkManager.isServerStreaming = true
         NetworkManager.isStreamingCurrent.value = true
         NetworkManager.connectionStatus.value = detail
@@ -280,6 +313,7 @@ object ShizukuAudioBridgeManager {
 
     private fun fail(context: Context, detail: String) {
         Log.e(TAG, detail)
+        NetworkManager.stopBroadcastingPresence()
         NetworkManager.isServerStreaming = false
         NetworkManager.isStreamingCurrent.value = false
         NetworkManager.connectionStatus.value = detail
