@@ -22,7 +22,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.cuscus.wifiaudiostreaming.AudioCaptureService
-import com.cuscus.wifiaudiostreaming.ClientService
+import com.cuscus.wifiaudiostreaming.ClientService\nimport com.cuscus.wifiaudiostreaming.ClientSessionController
 import com.cuscus.wifiaudiostreaming.NetworkManager
 import com.cuscus.wifiaudiostreaming.SecurityMode
 import com.cuscus.wifiaudiostreaming.UsbLink
