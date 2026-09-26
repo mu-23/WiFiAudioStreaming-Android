@@ -2844,7 +2844,7 @@ object NetworkManager {
                             .setBufferSizeInBytes(playbackBufferSize)
                             .setTransferMode(AudioTrack.MODE_STREAM)
                             .build()
-                        registerClientPlaybackTrack(audioTrack)
+                        registerClientPlaybackTrack(audioTrack!!)
 
                         val mcPlayout = PlayoutGovernor(
                             audioTrack, sampleRate, frameSize, mcLatencyMs, TAG
