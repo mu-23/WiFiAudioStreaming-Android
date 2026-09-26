@@ -37,6 +37,13 @@ jobs:
         with:
           packages: platform-tools
 
+      - name: Restore stable lab signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: wfas-audio-bridge-lab-debug-keystore-v1
+
+
       - name: Install Android 36 SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
