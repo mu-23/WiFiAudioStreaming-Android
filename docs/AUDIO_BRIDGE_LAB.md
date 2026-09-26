@@ -124,6 +124,104 @@ If audio is silent but AudioRecord reports RECORDSTATE_RECORDING, verify that
 media audio is actually playing and test both stereo and mono. Some vendor
 audio policies differ from AOSP/scrcpy behavior.
 
+## Experiment 2: App + Shizuku UserService
+
+This is now the preferred lab path for normal Android-to-Android internal-audio
+streaming. It is designed to remove the PC and MediaProjection from day-to-day
+use.
+
+### Target flow
+
+```text
+WFAS Lab app
+  -> Shizuku
+  -> WFAS UserService running as shell uid 2000
+  -> system playback capture
+  -> WFAS UDP
+  -> receiver
+```
+
+For Android 13 and newer the UserService uses the same hidden AudioPolicy
+direction used by current scrcpy playback capture:
+
+- `AudioMixingRule` targeting players
+- `AudioMix`
+- `AudioPolicy`
+- `ROUTE_FLAG_LOOP_BACK_RENDER`
+- `AudioManager.registerAudioPolicyStatic(...)`
+- `AudioPolicy.createAudioRecordSink(...)`
+
+`LOOP_BACK_RENDER` is selected specifically so the source device should keep
+playing locally while a copy is captured.
+
+Android 11/12 currently use `REMOTE_SUBMIX` as a compatibility fallback. On
+those versions local playback may be redirected while capture is active.
+
+### Requirements
+
+- Android 11 or newer.
+- Shizuku installed and running.
+- For the AudioPolicy path, Shizuku v13 or newer is required.
+- Non-root Shizuku is sufficient; when Shizuku was started through ADB/wireless
+  debugging the UserService should run as shell uid 2000.
+- After a device reboot, non-root Shizuku normally has to be started again.
+  Android 11+ can do that on-device through wireless debugging, so a PC is not
+  required for normal use.
+
+### First integrated scope
+
+The first integrated Shizuku sender intentionally supports only the path we need
+to prove first:
+
+- internal audio
+- WFAS unicast
+- PCM 16-bit
+- automatic WFAS discovery
+- source phone local playback retained on Android 13+
+- foreground host + CPU/Wi-Fi locks
+- receiver reconnects can refresh their UDP endpoint
+
+The lab currently requires WFAS security mode `OFF` for this path. Auth,
+encryption, microphone mixing, multicast, RTP, HTTP, DLNA and Snapcast are not
+yet wired into the privileged bridge. The app refuses to pretend these features
+are protected/supported rather than silently sending plaintext.
+
+### How to start it
+
+1. Install the latest `WiFi-Audio-Bridge-Lab` artifact.
+2. Install/start Shizuku on the sending phone.
+3. Open the lab app and leave the sender in the ordinary internal-audio,
+   unicast/WFAS configuration.
+4. Tap the normal Start button.
+5. Approve the one-time Shizuku permission for the lab app.
+
+For this eligible mode the app does **not** launch MediaProjection and does not
+request the screen-capture authorization dialog. The Shizuku UserService starts
+the capture and UDP sender directly.
+
+The receiver should discover the sender automatically. Manual IP connection to
+the normal WFAS streaming port remains useful as a fallback while this is still
+a lab build.
+
+### What still needs device validation
+
+A successful CI build proves that the Shizuku integration and hidden-API
+reflection code compile. It does not prove that a particular OEM audio policy
+accepts the mix at runtime.
+
+The next useful device validation is therefore:
+
+1. Start from the app without a computer attached.
+2. Confirm the UserService reports uid 2000.
+3. Confirm no MediaProjection dialog appears.
+4. Confirm receiver audio works.
+5. On Android 13+, confirm the sending phone still plays locally.
+6. Lock both screens and check long-running stability.
+7. Measure/compare end-to-end latency.
+
+If AudioPolicy registration fails on a specific ROM, capture the exact
+`WFAS_SHIZUKU` / `WFAS_SHIZUKU_APP` log before changing the architecture.
+
 ## Isolation guarantees
 
 This lab branch changes the application id and CI workflow. It does not publish
