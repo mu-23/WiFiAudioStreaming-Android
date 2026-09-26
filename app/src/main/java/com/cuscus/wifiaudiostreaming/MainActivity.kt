@@ -92,6 +92,7 @@ import com.cuscus.wifiaudiostreaming.scripting.ResolvedServerParams
 import com.cuscus.wifiaudiostreaming.scripting.ScriptActionType
 import com.cuscus.wifiaudiostreaming.scripting.ScriptCommand
 import com.cuscus.wifiaudiostreaming.scripting.ScriptExecutor
+import com.cuscus.wifiaudiostreaming.shizuku.ShizukuAudioBridgeManager
 import kotlinx.coroutines.launch
 
 private const val SPLASH_CHOREOGRAPHY_MS = 900L
@@ -423,6 +424,39 @@ class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.O)
     private fun requestServerStart(params: ResolvedServerParams) {
         pendingServerParams = params
+
+        // audio-bridge-lab: for the normal phone-to-phone internal-audio case,
+        // prefer Shizuku over MediaProjection. The privileged UserService runs
+        // as shell uid 2000, so no screen-capture authorization dialog is needed.
+        //
+        // Keep the first integration deliberately narrow: WFAS unicast, internal
+        // audio only. RTP/HTTP/DLNA/Snapcast/multicast and microphone still use
+        // the production MediaProjection/AudioCaptureService pipeline.
+        val shizukuBridgeEligible =
+            params.streamInternal &&
+                !params.streamMic &&
+                !params.isMulticast &&
+                !params.rtpEnabled &&
+                !params.httpEnabled &&
+                !params.dlnaEnabled &&
+                !params.snapcastEnabled &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
+        if (shizukuBridgeEligible) {
+            val channels = if (params.channelConfig == "STEREO") 2 else 1
+            ShizukuAudioBridgeManager.start(
+                this,
+                ShizukuAudioBridgeManager.Config(
+                    port = params.streamingPort,
+                    sampleRate = params.sampleRate,
+                    channels = channels,
+                    packetBytes = 512,
+                    keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                )
+            )
+            pendingServerParams = null
+            return
+        }
 
         if (params.streamInternal && !hasRecordAudioPermission()) {
             onMicPermissionGranted = { requestServerStart(params) }
