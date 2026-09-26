@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
  */
 object ClientSessionController {
     private const val TAG = "WFAS_SESSION"
+    private const val RUNTIME_PREFS = "wfas_client_runtime"
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val reconnectDelaysMs = longArrayOf(1_000L, 2_000L, 3_000L, 5_000L, 10_000L)
@@ -43,11 +44,14 @@ object ClientSessionController {
     private var desiredConnected = false
     @Volatile
     private var desiredTarget: ServerInfo? = null
+    @Volatile
+    private var appContext: Context? = null
 
     private var generation = 0L
     private var reconnectAttempt = 0
     private var reconnectJob: Job? = null
     private var statusJob: Job? = null
+    private var restoreJob: Job? = null
     private var attemptInFlight = false
 
     fun wantsConnection(): Boolean = desiredConnected
@@ -55,6 +59,7 @@ object ClientSessionController {
     @SuppressLint("MissingPermission")
     fun connect(context: Context, serverInfo: ServerInfo, presharedKey: String? = null) {
         val app = context.applicationContext
+        appContext = app
 
         generation += 1
         val token = generation
@@ -74,17 +79,7 @@ object ClientSessionController {
 
         ensureClientService(app)
 
-        // A completed handshake resets the backoff even if the UI has been
-        // recreated. The next dropout should again reconnect quickly.
-        statusJob = scope.launch {
-            NetworkManager.connectionStatus.collect { status ->
-                if (!desiredConnected || token != generation) return@collect
-                if (status == app.getString(R.string.status_streaming)) {
-                    reconnectAttempt = 0
-                }
-            }
-        }
-
+        installStatusObserver(app, token)
         startAttempt(app, serverInfo, token)
     }
 
@@ -94,9 +89,42 @@ object ClientSessionController {
      */
     @SuppressLint("MissingPermission")
     fun resumeIfNeeded(context: Context) {
-        val target = desiredTarget ?: return
-        if (!desiredConnected || attemptInFlight || reconnectJob?.isActive == true) return
-        startAttempt(context.applicationContext, target, generation)
+        val app = context.applicationContext
+        appContext = app
+
+        val target = desiredTarget
+        if (desiredConnected && target != null) {
+            if (!attemptInFlight && reconnectJob?.isActive != true) {
+                startAttempt(app, target, generation)
+            }
+            return
+        }
+
+        if (restoreJob?.isActive == true) return
+        restoreJob = scope.launch {
+            val currentSettings = SettingsDataStore(app).settingsFlow.first()
+            if (!currentSettings.clientPersistentConnection) {
+                clearDesiredTarget(app)
+                return@launch
+            }
+
+            val restored = restoreDesiredTarget(app) ?: return@launch
+            if (desiredConnected || attemptInFlight || reconnectJob?.isActive == true) return@launch
+
+            generation += 1
+            val token = generation
+            desiredConnected = true
+            desiredTarget = restored
+            reconnectAttempt = 0
+            attemptInFlight = false
+            NetworkManager.clientPresharedKey = ""
+            NetworkManager.clientKeyFromInvite = false
+            NetworkManager.clearInviteRejected()
+            NetworkManager.expectedMcastEpoch = null
+            installStatusObserver(app, token)
+            Log.i(TAG, "restored persistent client target " + restored.ip + ":" + restored.port)
+            startAttempt(app, restored, token)
+        }
     }
 
     /**
@@ -113,6 +141,9 @@ object ClientSessionController {
         reconnectJob = null
         statusJob?.cancel()
         statusJob = null
+        restoreJob?.cancel()
+        restoreJob = null
+        appContext?.let(::clearDesiredTarget)
         Log.i(TAG, "logical client session ended by explicit user stop")
     }
 
@@ -126,6 +157,12 @@ object ClientSessionController {
             if (!desiredConnected || token != generation) {
                 attemptInFlight = false
                 return@launch
+            }
+
+            if (currentSettings.clientPersistentConnection) {
+                saveDesiredTarget(context, serverInfo)
+            } else {
+                clearDesiredTarget(context)
             }
 
             NetworkManager.configureSecurity(
@@ -166,21 +203,30 @@ object ClientSessionController {
                         return@disconnected
                     }
 
-                    if (!currentSettings.clientPersistentConnection) {
-                        desiredConnected = false
-                        desiredTarget = null
-                        generation += 1
-                        reconnectAttempt = 0
-                        reconnectJob?.cancel()
-                        reconnectJob = null
-                        statusJob?.cancel()
-                        statusJob = null
-                        context.stopService(Intent(context, ClientService::class.java))
-                        Log.i(TAG, "transport session ended; keep-connected preference is off")
-                        return@disconnected
-                    }
+                    scope.launch {
+                        val latestSettings = SettingsDataStore(context).settingsFlow.first()
+                        if (!desiredConnected || token != generation) return@launch
 
-                    scheduleReconnect(context, serverInfo, token)
+                        if (!latestSettings.clientPersistentConnection) {
+                            desiredConnected = false
+                            desiredTarget = null
+                            generation += 1
+                            reconnectAttempt = 0
+                            reconnectJob?.cancel()
+                            reconnectJob = null
+                            statusJob?.cancel()
+                            statusJob = null
+                            clearDesiredTarget(context)
+                            context.stopService(Intent(context, ClientService::class.java))
+                            Log.i(TAG, "transport session ended; keep-connected preference is off")
+                            return@launch
+                        }
+
+                        val refreshedTarget = refreshReconnectTarget(serverInfo)
+                        desiredTarget = refreshedTarget
+                        saveDesiredTarget(context, refreshedTarget)
+                        scheduleReconnect(context, refreshedTarget, token)
+                    }
                 }
             )
         }
@@ -208,8 +254,109 @@ object ClientSessionController {
             if (!desiredConnected || token != generation) return@launch
 
             reconnectJob = null
-            startAttempt(context, serverInfo, token)
+            val refreshedTarget = refreshReconnectTarget(serverInfo)
+            desiredTarget = refreshedTarget
+            saveDesiredTarget(context, refreshedTarget)
+            startAttempt(context, refreshedTarget, token)
         }
+    }
+
+    private fun installStatusObserver(context: Context, token: Long) {
+        statusJob?.cancel()
+        statusJob = scope.launch {
+            NetworkManager.connectionStatus.collect { status ->
+                if (!desiredConnected || token != generation) return@collect
+                if (status == context.getString(R.string.status_streaming)) {
+                    reconnectAttempt = 0
+                }
+            }
+        }
+    }
+
+    private fun refreshReconnectTarget(previous: ServerInfo): ServerInfo {
+        val discovered = NetworkManager.discoveredDevices.value.values
+        discovered.firstOrNull { it.ip == previous.ip }?.let { return it }
+        if (previous.hostname.isNotBlank()) {
+            discovered.firstOrNull {
+                it.hostname.isNotBlank() && it.hostname == previous.hostname
+            }?.let {
+                Log.i(
+                    TAG,
+                    "sender moved " + previous.ip + ":" + previous.port +
+                        " -> " + it.ip + ":" + it.port + "; following discovery"
+                )
+                return it
+            }
+        }
+        return previous
+    }
+
+    private fun saveDesiredTarget(context: Context, target: ServerInfo) {
+        val editor = context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("desired", true)
+            .putString("ip", target.ip)
+            .putBoolean("multicast", target.isMulticast)
+            .putInt("port", target.port)
+            .putString("hostname", target.hostname)
+            .putString("security_mode", target.securityMode)
+            .putBoolean("encrypted", target.encrypted)
+            .putBoolean("server_sends_mic", target.serverSendsMic)
+            .putBoolean("server_wants_mic", target.serverWantsMic)
+            .putBoolean("from_beacon", target.fromBeacon)
+            .putBoolean("via_usb", target.viaUsb)
+
+        val format = target.audioFormat
+        editor.putBoolean("has_audio_format", format != null)
+        if (format != null) {
+            editor.putInt("audio_sample_rate", format.sampleRate)
+            editor.putInt("audio_channels", format.channels)
+            editor.putInt("audio_bit_depth", format.bitDepth)
+        } else {
+            editor.remove("audio_sample_rate")
+            editor.remove("audio_channels")
+            editor.remove("audio_bit_depth")
+        }
+        editor.apply()
+    }
+
+    private fun restoreDesiredTarget(context: Context): ServerInfo? {
+        val prefs = context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("desired", false)) return null
+        val ip = prefs.getString("ip", "").orEmpty()
+        val port = prefs.getInt("port", 0)
+        if (ip.isBlank() || port !in 1..65535) return null
+
+        val audioFormat = if (prefs.getBoolean("has_audio_format", false)) {
+            StreamAudioFormat(
+                sampleRate = prefs.getInt("audio_sample_rate", 48_000),
+                channels = prefs.getInt("audio_channels", 2),
+                bitDepth = prefs.getInt("audio_bit_depth", 16)
+            )
+        } else {
+            null
+        }
+
+        return ServerInfo(
+            ip = ip,
+            isMulticast = prefs.getBoolean("multicast", false),
+            port = port,
+            hostname = prefs.getString("hostname", "").orEmpty(),
+            securityMode = prefs.getString("security_mode", null),
+            encrypted = prefs.getBoolean("encrypted", false),
+            serverSendsMic = prefs.getBoolean("server_sends_mic", false),
+            serverWantsMic = prefs.getBoolean("server_wants_mic", false),
+            fromBeacon = prefs.getBoolean("from_beacon", false),
+            audioFormat = audioFormat,
+            viaUsb = prefs.getBoolean("via_usb", false)
+        )
+    }
+
+    private fun clearDesiredTarget(context: Context) {
+        context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
     }
 
     /**
