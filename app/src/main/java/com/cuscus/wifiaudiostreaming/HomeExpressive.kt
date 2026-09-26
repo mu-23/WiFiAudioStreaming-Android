@@ -237,6 +237,22 @@ fun ExpressiveHomeScreen(
 
     val live = isStreaming || snapLive || rtpLive
 
+    // audio-bridge-lab: this is the Shizuku-first shape. Do not let the old
+    // WFAS transport/security gating disable the Start button before the
+    // Shizuku controller even gets a chance to explain what is missing.
+    //
+    // requestServerStart() remains authoritative: it will reject unsupported
+    // security/aux-protocol combinations with a visible message.
+    val shizukuLabStartCandidate =
+        isServer &&
+            appSettings.streamInternal &&
+            !appSettings.streamMic &&
+            !isMulticastMode &&
+            !appSettings.rtpEnabled &&
+            !appSettings.httpEnabled &&
+            !appSettings.dlnaEnabled &&
+            !appSettings.snapcastEnabled
+
     // Il cavo vince su tutto, da tutte e due le parti: se l'audio passa di li'
     // e' la prima cosa da sapere -- spiega la latenza, spiega perche' il wifi
     // non c'entra, e si vede prima di leggere qualunque scritta.
@@ -387,17 +403,19 @@ fun ExpressiveHomeScreen(
                 localIp = localIp,
                 hasMicPermission = hasMicPermission,
                 usbConnected = usbSession,
-                keyMissing = SecurityMode.requiresKey(appSettings.securityMode) &&
-                        !appSettings.qrPairingEnabled &&
-                        appSettings.authKey.isBlank(),
-                canStartServer = WfasPolicy.canStartServerWith(
-                    appSettings.wfasMode,
-                    usbLinkState.isReady,
-                    appSettings.rtpEnabled,
-                    appSettings.httpEnabled,
-                    appSettings.dlnaEnabled,
-                    appSettings.snapcastEnabled
-                ),
+                keyMissing = !shizukuLabStartCandidate &&
+                    SecurityMode.requiresKey(appSettings.securityMode) &&
+                    !appSettings.qrPairingEnabled &&
+                    appSettings.authKey.isBlank(),
+                canStartServer = shizukuLabStartCandidate ||
+                    WfasPolicy.canStartServerWith(
+                        appSettings.wfasMode,
+                        usbLinkState.isReady,
+                        appSettings.rtpEnabled,
+                        appSettings.httpEnabled,
+                        appSettings.dlnaEnabled,
+                        appSettings.snapcastEnabled
+                    ),
                 onActivateWfas = onActivateWfas,
                 onStartServer = onStartServer,
                 onStopServer = onStopLive
