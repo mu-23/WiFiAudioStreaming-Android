@@ -7,6 +7,8 @@
 
 package com.cuscus.wifiaudiostreaming.shizuku
 
+import com.cuscus.wifiaudiostreaming.StreamingActionReceiver
+
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -131,6 +133,12 @@ class ShizukuBridgeHostService : Service() {
                 }
             }.getOrNull()
         }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        StreamingActionReceiver.stopEverything(this)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
