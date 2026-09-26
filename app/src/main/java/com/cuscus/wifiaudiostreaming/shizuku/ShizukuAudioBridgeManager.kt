@@ -359,8 +359,9 @@ object ShizukuAudioBridgeManager {
                 pendingConfig?.networkInterfaceName ?: "Auto"
             )
         }
-        NetworkManager.isServerStreaming = false
-        NetworkManager.isStreamingCurrent.value = false
+        // Keep the logical server session alive while we wait for Shizuku.
+        // Discovery is withdrawn above, so receivers do not see a fake online
+        // sender; keeping the session active leaves a visible Stop action in UI.
         NetworkManager.connectionStatus.value = detail
     }
 
