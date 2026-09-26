@@ -809,4 +809,18 @@
     <string name="update_dialog_later">Later</string>
     <string name="update_dialog_close">Close</string>
 
+    <string name="shizuku_status_disconnected_waiting">Shizuku audio bridge disconnected; waiting for Shizuku</string>
+    <string name="shizuku_status_stopped_resume">Shizuku stopped; connection intent kept. Restart Shizuku to resume.</string>
+    <string name="shizuku_status_not_running">Shizuku is not running. Start Shizuku, then return to WFAS.</string>
+    <string name="shizuku_status_version_required">Shizuku v13+ is required for the AudioPolicy bridge.</string>
+    <string name="shizuku_status_permission_denied">Shizuku permission was denied. Grant WFAS access in Shizuku.</string>
+    <string name="shizuku_status_waiting_permission">Waiting for Shizuku permission</string>
+    <string name="shizuku_prompt_allow_permission">Please allow WFAS in the Shizuku permission dialog.</string>
+    <string name="shizuku_error_request_permission">Cannot request Shizuku permission: %1$s</string>
+    <string name="shizuku_status_starting_bridge">Starting Shizuku audio bridge</string>
+    <string name="shizuku_error_bind_service">Cannot bind Shizuku UserService: %1$s</string>
+    <string name="shizuku_error_remote_call">Shizuku UserService call failed: %1$s</string>
+    <string name="shizuku_error_bridge_start">Shizuku bridge start failed: %1$s</string>
+    <string name="shizuku_bridge_active">Shizuku audio bridge active</string>
+
 </resources>
