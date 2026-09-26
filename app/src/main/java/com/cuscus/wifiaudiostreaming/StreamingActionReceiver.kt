@@ -58,6 +58,8 @@ class StreamingActionReceiver : BroadcastReceiver() {
             app.stopService(Intent(app, AudioCaptureService::class.java))
             app.stopService(Intent(app, ClientService::class.java))
             app.stopService(Intent(app, AutoConnectService::class.java))
+            app.stopService(Intent(app, SnapcastClientService::class.java))
+            app.stopService(Intent(app, RtpClientService::class.java))
             NotificationCenter.cancelAll(app)
         }
     }
