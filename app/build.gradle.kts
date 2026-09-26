@@ -17,7 +17,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.cuscus.wifiaudiostreaming"
+        applicationId = "com.cuscus.wifiaudiostreaming.lab"
         minSdk = 24
         targetSdk = 36
         // CI builds use a monotonically increasing versionCode so each signed
