@@ -437,7 +437,9 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             mixingRuleBuilderClass
                     .getMethod("voiceCommunicationCaptureAllowed", boolean.class)
                     .invoke(mixingRuleBuilder, true);
-        } catch (NoSuchMethodException ignored) {
+        } catch (Throwable ignored) {
+            // Optional for our MEDIA/GAME use case. Do not let an OEM-specific
+            // hidden-API quirk disable ordinary playback capture.
         }
 
         int ruleMatchUsage = mixingRuleClass.getField("RULE_MATCH_ATTRIBUTE_USAGE").getInt(null);
