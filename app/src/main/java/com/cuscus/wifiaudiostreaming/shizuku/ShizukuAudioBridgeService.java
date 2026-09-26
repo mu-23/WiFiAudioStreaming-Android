@@ -180,6 +180,12 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
     }
 
     @Override
+    public int getBuildVersion() {
+        return BuildConfig.VERSION_CODE;
+    }
+
+
+    @Override
     public void destroy() {
         stopBridgeInternal();
         Log.i(TAG, "destroy");
