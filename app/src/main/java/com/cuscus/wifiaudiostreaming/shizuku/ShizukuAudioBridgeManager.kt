@@ -288,6 +288,7 @@ object ShizukuAudioBridgeManager {
         // The privileged process owns capture + UDP. Discovery stays in the
         // ordinary app process so receivers can find this sender automatically.
         NetworkManager.configureSecurity("OFF", "", false)
+        NetworkManager.serverStreamsMic = false
         NetworkManager.startBroadcastingPresence(
             context = context,
             isMulticast = false,
