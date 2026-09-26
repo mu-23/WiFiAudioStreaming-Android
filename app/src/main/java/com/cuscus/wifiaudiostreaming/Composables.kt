@@ -498,6 +498,7 @@ fun ExpressiveSettingsScreen(
     onServerProtocolsChange: (Boolean, Int, Boolean) -> Unit,
     onHttpSettingsChange: (Int, Boolean) -> Unit,
     onClientTileIpChange: (String) -> Unit,
+    onClientPersistentConnectionChange: (Boolean) -> Unit = {},
     onAutoConnectEnabledChange: (Boolean) -> Unit,
     onSaveAutoConnectList: (List<AutoConnectEntry>) -> Unit,
     onMuteRenderChange: (Boolean) -> Unit = {},
@@ -551,6 +552,7 @@ fun ExpressiveSettingsScreen(
             onServerProtocolsChange = onServerProtocolsChange,
             onHttpSettingsChange = onHttpSettingsChange,
             onClientTileIpChange = onClientTileIpChange,
+            onClientPersistentConnectionChange = onClientPersistentConnectionChange,
             onSaveAutoConnectList = onSaveAutoConnectList,
             onAutoConnectEnabledChange = onAutoConnectEnabledChange,
             onMuteRenderChange = onMuteRenderChange,
@@ -900,6 +902,13 @@ fun SettingsScreenContent(
                         currentValue = appSettings.networkInterface,
                         options = interfaces,
                         onOptionSelected = { onNetworkInterfaceChange(it) }
+                    )
+                    SettingsSwitchItem(
+                        title = stringResource(R.string.settings_item_keep_connected_title),
+                        description = stringResource(R.string.settings_item_keep_connected_desc),
+                        icon = Icons.Outlined.Sync,
+                        isChecked = appSettings.clientPersistentConnection,
+                        onCheckedChange = onClientPersistentConnectionChange
                     )
                     SettingsInfoItem(
                         title = stringResource(R.string.vpn_note_title),
