@@ -7,6 +7,8 @@
 
   将 Android 设备的内部音频或麦克风音频实时发送到局域网中的另一台设备，也可以把 Android 设备作为接收端直接播放音频。
 
+  **简体中文** | [English](README_EN.md)
+
   [下载最新版本](https://github.com/mu-23/WiFiAudioStreaming-Android/releases/latest) ·
   [查看 Releases](https://github.com/mu-23/WiFiAudioStreaming-Android/releases) ·
   [实验分支](https://github.com/mu-23/WiFiAudioStreaming-Android/tree/audio-bridge-lab)
