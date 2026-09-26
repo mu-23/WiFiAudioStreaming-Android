@@ -30,6 +30,7 @@ import com.cuscus.wifiaudiostreaming.data.AppSettings
 import com.cuscus.wifiaudiostreaming.data.AutoConnectEntry
 import com.cuscus.wifiaudiostreaming.data.SecretStore
 import com.cuscus.wifiaudiostreaming.data.SettingsDataStore
+import com.cuscus.wifiaudiostreaming.shizuku.ShizukuAudioBridgeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -726,12 +727,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopStreaming() {
-        // Only an explicit user stop clears the logical client connection
-        // intent. Transport timeouts and network failures never call this.
+        // Only an explicit user stop clears persistent client/server intents.
         ClientSessionController.userDisconnect()
 
-        setIsStreaming(false)
         val app = getApplication<Application>()
+        if (ShizukuAudioBridgeManager.isActive()) {
+            ShizukuAudioBridgeManager.stop(app)
+        }
+
+        setIsStreaming(false)
         NetworkManager.stopStreaming(app)
         app.stopService(Intent(app, ClientService::class.java))
         app.stopService(Intent(app, AudioCaptureService::class.java))
