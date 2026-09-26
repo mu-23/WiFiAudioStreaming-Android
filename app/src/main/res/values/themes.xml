@@ -10,4 +10,11 @@
         <item name="postSplashScreenTheme">@style/Theme.WiFiAudioStreaming</item>
     </style>
 
+    <style name="Theme.WiFiAudioStreaming.VolumeDialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowMinWidthMajor">88%</item>
+        <item name="android:windowMinWidthMinor">88%</item>
+    </style>
+
 </resources>
