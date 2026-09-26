@@ -604,5 +604,4 @@
     <string name="snapcast_how_to_connect_auto">此网络中的客户端会自动发现串流。如果某个客户端没有发现，请手动指向下方地址。</string>
     <string name="snapcast_how_to_connect_manual">自动发现已关闭，因此客户端必须手动连接到此地址。</string>
     <string name="multicast_locked_by">由 %1$s 要求</string>
-    <string name="notification_permission_missing">缺少通知权限</string>
 </resources>
