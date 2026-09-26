@@ -33,6 +33,7 @@ class ClientService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var statusJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -56,20 +57,28 @@ class ClientService : Service() {
         // and random disconnects.
         acquireLocks()
 
-        serviceScope.launch {
-            NetworkManager.connectionStatus
-                .collect { status ->
-                    NotificationCenter.post(
-                        this@ClientService,
-                        NotificationCenter.ID_CLIENT,
-                        NotificationCenter.clientNotification(
+        // onStartCommand may be delivered more than once. Keep one notification
+        // collector instead of leaking a new collector on every delivery.
+        if (statusJob?.isActive != true) {
+            statusJob = serviceScope.launch {
+                NetworkManager.connectionStatus
+                    .collect { status ->
+                        NotificationCenter.post(
                             this@ClientService,
-                            status.ifBlank { getString(R.string.notif_connecting) }
+                            NotificationCenter.ID_CLIENT,
+                            NotificationCenter.clientNotification(
+                                this@ClientService,
+                                status.ifBlank { getString(R.string.notif_connecting) }
+                            )
                         )
-                    )
-                    delay(UPDATE_THROTTLE_MS)
-                }
+                        delay(UPDATE_THROTTLE_MS)
+                    }
+            }
         }
+
+        // A sticky service restart must preserve the user's desire to stay
+        // connected. Reconnect ownership is process-wide, not tied to the UI.
+        ClientSessionController.resumeIfNeeded(this)
 
         return START_STICKY
     }
@@ -110,6 +119,7 @@ class ClientService : Service() {
         runCatching { wifiLock?.takeIf { it.isHeld }?.release() }
         wakeLock = null
         wifiLock = null
+        statusJob = null
         serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         NotificationCenter.cancel(this, NotificationCenter.ID_CLIENT)
