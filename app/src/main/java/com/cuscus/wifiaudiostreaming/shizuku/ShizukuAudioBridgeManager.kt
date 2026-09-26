@@ -264,6 +264,15 @@ object ShizukuAudioBridgeManager {
             NetworkManager.isStreamingCurrent.value = false
             NetworkManager.connectionStatus.value = app.getString(R.string.status_idle)
             _state.value = State.Idle
+            runCatching { service?.stopBridge() }
+            if (bound) {
+                runCatching {
+                    Shizuku.unbindUserService(userServiceArgs(app), serviceConnection, true)
+                }
+            }
+            service = null
+            bound = false
+            bindingInProgress = false
             Log.i(TAG, "remote bridge became idle; cleared logical server state")
             return false
         }
