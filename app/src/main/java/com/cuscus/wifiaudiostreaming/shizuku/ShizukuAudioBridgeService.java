@@ -218,14 +218,18 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 InetSocketAddress client = waitForClient(localSocket);
                 if (client == null || !running.get()) break;
                 Log.i(TAG, "client connected " + client);
-                runSession(localSocket, client, sampleRate, channels, packetBytes);
-                if (running.get() && !persistAfterClient) {
-                    Log.i(TAG, "session ended; persistence disabled, stopping bridge");
+                boolean cleanClientBye =
+                        runSession(localSocket, client, sampleRate, channels, packetBytes);
+                if (running.get() && cleanClientBye && !persistAfterClient) {
+                    Log.i(TAG, "client disconnected cleanly; persistence disabled, stopping bridge");
+                    status = "idle";
                     running.set(false);
                     break;
                 }
                 if (running.get()) {
-                    Log.i(TAG, "session ended; waiting for reconnect");
+                    Log.i(TAG, cleanClientBye
+                            ? "client disconnected cleanly; waiting for next client"
+                            : "client heartbeat lost; keeping server alive for reconnect");
                 }
             }
         } catch (SocketException e) {
@@ -279,7 +283,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         return null;
     }
 
-    private void runSession(
+    private boolean runSession(
             DatagramSocket s,
             InetSocketAddress initialClient,
             int sampleRate,
@@ -288,6 +292,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
     ) throws Exception {
         final int frameSize = channels * 2;
         final AtomicBoolean sessionAlive = new AtomicBoolean(true);
+        final AtomicBoolean explicitClientBye = new AtomicBoolean(false);
         final AtomicBoolean pongCapable = new AtomicBoolean(false);
         final AtomicLong lastClientActivityAt = new AtomicLong(System.currentTimeMillis());
         final AtomicReference<InetSocketAddress> client = new AtomicReference<>(initialClient);
@@ -332,6 +337,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                         lastClientActivityAt.set(System.currentTimeMillis());
                     } else if ("CLIENT_BYE".equals(text) && remote.getAddress().equals(clientIp)) {
                         lastClientActivityAt.set(System.currentTimeMillis());
+                        explicitClientBye.set(true);
                         sessionAlive.set(false);
                     }
                 } catch (Throwable t) {
@@ -440,6 +446,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 Thread.currentThread().interrupt();
             }
         }
+        return explicitClientBye.get();
     }
 
     @SuppressLint({"PrivateApi", "WrongConstant", "MissingPermission"})
