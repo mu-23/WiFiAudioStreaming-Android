@@ -4964,11 +4964,17 @@ fun ExpressiveVolumeSlider(
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary,
-    showPresets: Boolean = true
+    showPresets: Boolean = true,
+    maxVolume: Float = 2f,
+    title: String? = null,
+    subtitle: String? = null
 ) {
     val haptics = rememberAppHaptics()
     var isDragging by remember { mutableStateOf(false) }
     var lastStep by remember { mutableStateOf((volume * 20).toInt()) }
+    val safeMaxVolume = maxVolume.coerceAtLeast(0.1f)
+    val displayTitle = title ?: stringResource(R.string.volume_card_title)
+    val displaySubtitle = subtitle ?: stringResource(R.string.server_audio_restart_hint)
 
     val percentage = (volume * 100).toInt()
     val volumeIcon = when {
@@ -5028,12 +5034,12 @@ fun ExpressiveVolumeSlider(
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.volume_card_title),
+                    text = displayTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = stringResource(R.string.server_audio_restart_hint),
+                    text = displaySubtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -5049,7 +5055,7 @@ fun ExpressiveVolumeSlider(
         }
 
         Slider(
-            value = volume.coerceIn(0f, 2f),
+            value = volume.coerceIn(0f, safeMaxVolume),
             onValueChange = { value ->
                 if (!isDragging) {
                     isDragging = true
@@ -5068,7 +5074,7 @@ fun ExpressiveVolumeSlider(
                 isDragging = false
                 haptics.gestureEnd()
             },
-            valueRange = 0f..2f,
+            valueRange = 0f..safeMaxVolume,
             colors = SliderDefaults.colors(
                 thumbColor = badgeColor,
                 activeTrackColor = badgeColor,
@@ -5077,7 +5083,7 @@ fun ExpressiveVolumeSlider(
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (showPresets) {
+        if (showPresets && safeMaxVolume >= 2f) {
             val selected = when {
                 kotlin.math.abs(volume - 0f) < 0.05f -> "0"
                 kotlin.math.abs(volume - 1f) < 0.05f -> "1"
