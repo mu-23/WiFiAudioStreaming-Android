@@ -213,6 +213,16 @@ object ShizukuAudioBridgeManager {
             _state.value = State.WaitingForShizuku
             NetworkManager.connectionStatus.value = detail
             Toast.makeText(context, detail, Toast.LENGTH_LONG).show()
+
+            // Make the Start button actionable: if Shizuku is installed, open it
+            // so the user can start the service immediately. No PC is required on
+            // Android 11+ when Shizuku is started through wireless debugging.
+            runCatching {
+                context.packageManager
+                    .getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                    ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ?.let(context::startActivity)
+            }
             return
         }
 
