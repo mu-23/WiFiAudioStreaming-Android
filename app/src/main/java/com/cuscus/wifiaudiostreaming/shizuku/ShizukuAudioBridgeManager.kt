@@ -69,7 +69,7 @@ object ShizukuAudioBridgeManager {
     private var appContext: Context? = null
     private var listenersInstalled = false
 
-    private val serviceConnection = object : ServiceConnection {
+    private val serviceConnection: ServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             service = IShizukuAudioBridge.Stub.asInterface(binder)
             bindingInProgress = false
