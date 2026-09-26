@@ -30,6 +30,7 @@ import com.cuscus.wifiaudiostreaming.WfasPolicy
 import com.cuscus.wifiaudiostreaming.ServerInfo
 import com.cuscus.wifiaudiostreaming.data.AppSettings
 import com.cuscus.wifiaudiostreaming.data.SettingsDataStore
+import com.cuscus.wifiaudiostreaming.shizuku.ShizukuAudioBridgeManager
 import kotlinx.coroutines.flow.first
 
 object ScriptExecutor {
@@ -181,6 +182,9 @@ object ScriptExecutor {
     }
 
     fun stop(context: Context) {
+        if (ShizukuAudioBridgeManager.isActive()) {
+            ShizukuAudioBridgeManager.stop(context)
+        }
         NetworkManager.stopStreaming(context)
         context.stopService(Intent(context, AudioCaptureService::class.java))
         context.stopService(Intent(context, ClientService::class.java))
