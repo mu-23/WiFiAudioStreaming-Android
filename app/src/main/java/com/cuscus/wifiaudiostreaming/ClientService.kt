@@ -18,8 +18,10 @@
 package com.cuscus.wifiaudiostreaming
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.PowerManager
 import android.widget.Toast
 import com.cuscus.wifiaudiostreaming.NetworkManager.updateWidgetState
 import kotlinx.coroutines.*
@@ -27,12 +29,13 @@ import kotlinx.coroutines.*
 class ClientService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!NotificationCenter.canPost(this)) {
-            Toast.makeText(this, "Notifications permission missing", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.notification_permission_missing, Toast.LENGTH_SHORT).show()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -43,6 +46,11 @@ class ClientService : Service() {
             NotificationCenter.ID_CLIENT,
             NotificationCenter.clientNotification(this, getString(R.string.notif_connecting))
         )
+
+        // Keep the CPU awake while WFAS is actively receiving, matching the
+        // RTP and Snapcast client services. Without this, some Android devices
+        // throttle the receiver aggressively when the screen turns off.
+        acquireWakeLock()
 
         serviceScope.launch {
             NetworkManager.connectionStatus
@@ -62,10 +70,23 @@ class ClientService : Service() {
         return START_STICKY
     }
 
+    private fun acquireWakeLock() {
+        if (wakeLock != null) return
+        wakeLock = runCatching {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "wfas:client").apply {
+                setReferenceCounted(false)
+                acquire(WAKE_LOCK_TIMEOUT_MS)
+            }
+        }.getOrNull()
+    }
+
     override fun onDestroy() {
         CoroutineScope(Dispatchers.IO).launch {
             updateWidgetState(this@ClientService, false, false)
         }
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
         serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         NotificationCenter.cancel(this, NotificationCenter.ID_CLIENT)
@@ -74,5 +95,6 @@ class ClientService : Service() {
 
     private companion object {
         const val UPDATE_THROTTLE_MS = 350L
+        const val WAKE_LOCK_TIMEOUT_MS = 8L * 60L * 60L * 1000L
     }
 }
