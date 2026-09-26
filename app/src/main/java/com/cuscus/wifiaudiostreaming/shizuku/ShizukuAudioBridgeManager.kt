@@ -27,7 +27,7 @@ import rikka.shizuku.Shizuku
 object ShizukuAudioBridgeManager {
     private const val TAG = "WFAS_SHIZUKU_APP"
     private const val REQUEST_CODE_PERMISSION = 0x5746
-    private const val USER_SERVICE_VERSION = 1
+    private const val USER_SERVICE_VERSION = 2
 
     data class Config(
         val port: Int,
