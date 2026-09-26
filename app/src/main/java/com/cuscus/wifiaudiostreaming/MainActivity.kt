@@ -460,13 +460,15 @@ class MainActivity : ComponentActivity() {
                 return
             }
 
-            val channels = if (params.channelConfig == "STEREO") 2 else 1
+            // Match scrcpy's proven playback-capture format for the first
+            // integrated build. Once runtime behavior is proven on real devices
+            // we can negotiate/offer other sample rates and channel layouts.
             ShizukuAudioBridgeManager.start(
                 this,
                 ShizukuAudioBridgeManager.Config(
                     port = params.streamingPort,
-                    sampleRate = params.sampleRate,
-                    channels = channels,
+                    sampleRate = 48_000,
+                    channels = 2,
                     packetBytes = 512,
                     keepPlayingOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
                     networkInterfaceName = params.networkInterface
