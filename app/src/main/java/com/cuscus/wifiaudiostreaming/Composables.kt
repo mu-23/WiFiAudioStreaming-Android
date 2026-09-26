@@ -1348,26 +1348,23 @@ fun SettingsScreenContent(
 
             item {
                 SettingsGroupCard(
-                    title = Bilingual("Updates", "Aggiornamenti").text(),
+                    title = stringResource(R.string.settings_group_updates),
                     icon = Icons.Outlined.Update
                 ) {
                     SettingsSwitchItem(
-                        title = Bilingual("Check for updates automatically", "Controlla aggiornamenti automaticamente").text(),
-                        description = Bilingual(
-                            "On launch, check GitHub for a newer release.",
-                            "All'avvio, controlla su GitHub se c'è una nuova versione."
-                        ).text(),
+                        title = stringResource(R.string.settings_item_auto_update_title),
+                        description = stringResource(R.string.settings_item_auto_update_desc),
                         icon = Icons.Outlined.Update,
                         isChecked = appSettings.autoUpdateCheckEnabled,
                         onCheckedChange = onAutoUpdateCheckChange
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SettingsClickableItem(
-                        title = Bilingual("Check for updates now", "Controlla aggiornamenti ora").text(),
+                        title = stringResource(R.string.settings_item_check_update_title),
                         description = if (checkingForUpdate)
-                            Bilingual("Checking…", "Controllo in corso…").text()
+                            stringResource(R.string.settings_item_check_update_checking)
                         else
-                            Bilingual("Tap to check GitHub now.", "Tocca per controllare ora su GitHub.").text(),
+                            stringResource(R.string.settings_item_check_update_desc),
                         icon = Icons.Outlined.Refresh,
                         onClick = onCheckForUpdates
                     )
@@ -1436,7 +1433,7 @@ fun SettingsScreenContent(
                         description = stringResource(R.string.source_code_view_on_github),
                         icon = Icons.Outlined.Code,
                         onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/marcomorosi06/WiFiAudioStreaming-Android/"))
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mu-23/WiFiAudioStreaming-Android/"))
                             context.startActivity(intent)
                         }
                     )
