@@ -2658,6 +2658,14 @@ object NetworkManager {
                                                 val pingAt = System.currentTimeMillis()
                                                 lastPingAt.set(pingAt)
                                                 lastServerActivityAt.set(pingAt)
+                                                // New senders use this as a real liveness signal.
+                                                // Older senders simply ignore the extra control packet.
+                                                sock.send(
+                                                    Datagram(
+                                                        buildPacket { writeText("PONG") },
+                                                        remoteAddress
+                                                    )
+                                                )
                                             }
                                             "BYE" -> {
                                                 markDisconnect("SERVER_BYE")
