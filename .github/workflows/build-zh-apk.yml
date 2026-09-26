@@ -3,7 +3,7 @@ name: Build Audio Bridge Lab
 on:
   workflow_dispatch:
   push:
-    branches: [ "audio-bridge-lab" ]
+    branches: [ "audio-bridge-lab", "main" ]
     paths:
       - "app/src/main/**"
       - "app/build.gradle.kts"
@@ -58,12 +58,17 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Set lab CI version
+      - name: Set CI version
         run: |
           set -euo pipefail
           CODE=$((2201000 + GITHUB_RUN_NUMBER))
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            NAME="1.2.1-main.$GITHUB_RUN_NUMBER"
+          else
+            NAME="1.2.1-audio-bridge-lab.$GITHUB_RUN_NUMBER"
+          fi
           echo "WFAS_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
-          echo "WFAS_VERSION_NAME=1.2.1-audio-bridge-lab.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "WFAS_VERSION_NAME=$NAME" >> "$GITHUB_ENV"
 
       - name: Run unit tests
         run: |
@@ -77,14 +82,20 @@ jobs:
       - name: Prepare versioned artifact
         run: |
           set -euo pipefail
-          APK_NAME="WiFi-Audio-Bridge-Lab-${GITHUB_RUN_NUMBER}.apk"
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            PREFIX="WiFi-Audio-Bridge-Main"
+          else
+            PREFIX="WiFi-Audio-Bridge-Lab"
+          fi
+          APK_NAME="${PREFIX}-${GITHUB_RUN_NUMBER}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK_NAME"
-          echo "LAB_APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
+          echo "WFAS_APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
+          echo "WFAS_ARTIFACT_NAME=${PREFIX}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
           echo "Prepared $APK_NAME with version $WFAS_VERSION_NAME ($WFAS_VERSION_CODE)"
 
-      - name: Upload versioned lab APK artifact
+      - name: Upload versioned APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WiFi-Audio-Bridge-Lab-${{ github.run_number }}
-          path: ${{ env.LAB_APK_NAME }}
+          name: ${{ env.WFAS_ARTIFACT_NAME }}
+          path: ${{ env.WFAS_APK_NAME }}
           if-no-files-found: error
