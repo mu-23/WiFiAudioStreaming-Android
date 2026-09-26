@@ -40,12 +40,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsDataStore = SettingsDataStore(application)
 
-    // One logical client session survives transient network failures until the
-    // user explicitly disconnects or starts a different target.
-    private var clientSessionToken = 0L
-    private var clientReconnectJob: Job? = null
-    private var clientReconnectAttempt = 0
-
     private val _isServer = MutableStateFlow(true)
 
     // Il ruolo si fissa quando lo stream parte e non cambia piu' finche' dura.
@@ -59,17 +53,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             NetworkManager.isStreamingCurrent.collect { streaming ->
                 if (streaming) _isServer.value = NetworkManager.isServerStreaming
                 else restoreForcedEncryption()
-            }
-        }
-        viewModelScope.launch {
-            NetworkManager.connectionStatus.collect { status ->
-                if (!NetworkManager.isServerStreaming &&
-                    status == application.getString(R.string.status_streaming)
-                ) {
-                    // A real handshake completed. A later dropout should start
-                    // again from the short retry delay.
-                    clientReconnectAttempt = 0
-                }
             }
         }
     }
@@ -711,88 +694,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NetworkManager.restartListeningForDevices(getApplication(), currentSettings?.networkInterface ?: "Auto")
     }
 
-    // Aggiorna startClient (passando l'interfaccia)
+    // A manual connect expresses a persistent user intent. The process-wide
+    // controller owns reconnects; recreating this ViewModel must not cancel them.
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun startClient(serverInfo: ServerInfo, presharedKey: String? = null) {
-        clientSessionToken += 1
-        val token = clientSessionToken
-        clientReconnectJob?.cancel()
-        clientReconnectJob = null
-        clientReconnectAttempt = 0
-
-        val app = getApplication<Application>()
-        val intent = Intent(app, ClientService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            app.startForegroundService(intent)
-        } else {
-            app.startService(intent)
-        }
-
-        NetworkManager.clientPresharedKey = presharedKey ?: ""
-        NetworkManager.clientKeyFromInvite = presharedKey != null
-        NetworkManager.clearInviteRejected()
-        if (presharedKey == null) NetworkManager.expectedMcastEpoch = null
-
-        startClientAttempt(serverInfo, token)
-    }
-
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    private fun startClientAttempt(serverInfo: ServerInfo, token: Long) {
-        if (token != clientSessionToken) return
-
-        val currentSettings = appSettings.value ?: return
-        NetworkManager.configureSecurity(
-            currentSettings.securityMode,
-            currentSettings.authKey,
-            currentSettings.encryptionEnabled
-        )
-
-        NetworkManager.startClient(
+        ClientSessionController.connect(
             context = getApplication(),
             serverInfo = serverInfo,
-            sampleRate = currentSettings.sampleRate,
-            channelConfig = currentSettings.channelConfig,
-            bufferSize = currentSettings.bufferSize,
-            sendMicrophone = currentSettings.sendClientMicrophone,
-            micPort = currentSettings.micPort,
-            networkInterfaceName = currentSettings.networkInterface,
-            connectionSoundEnabled = currentSettings.connectionSoundEnabled,
-            disconnectionSoundEnabled = currentSettings.disconnectionSoundEnabled,
-            onServerDisconnected = {
-                setIsStreaming(false)
-                if (token == clientSessionToken && shouldRetryClientConnection()) {
-                    scheduleClientReconnect(serverInfo, token)
-                }
-            }
+            presharedKey = presharedKey
         )
-    }
-
-    private fun shouldRetryClientConnection(): Boolean {
-        val app = getApplication<Application>()
-        val status = NetworkManager.connectionStatus.value
-        return status != app.getString(R.string.status_protocol_incompatible) &&
-            status != app.getString(R.string.status_unauthorized) &&
-            status != app.getString(R.string.status_key_required) &&
-            !status.startsWith(app.getString(R.string.status_unsupported_format, "").substringBefore("%"))
-    }
-
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    private fun scheduleClientReconnect(serverInfo: ServerInfo, token: Long) {
-        if (token != clientSessionToken || clientReconnectJob?.isActive == true) return
-
-        val delayMs = CLIENT_RECONNECT_DELAYS_MS[
-            clientReconnectAttempt.coerceAtMost(CLIENT_RECONNECT_DELAYS_MS.lastIndex)
-        ]
-        clientReconnectAttempt += 1
-
-        clientReconnectJob = viewModelScope.launch {
-            NetworkManager.connectionStatus.value =
-                getApplication<Application>().getString(R.string.status_link_lost_waiting)
-            delay(delayMs)
-            if (token != clientSessionToken) return@launch
-            clientReconnectJob = null
-            startClientAttempt(serverInfo, token)
-        }
     }
 
     @SuppressLint("MissingPermission")
@@ -816,12 +726,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopStreaming() {
-        // Explicit user stop ends the logical client session and invalidates
-        // every delayed retry captured by the old token.
-        clientSessionToken += 1
-        clientReconnectJob?.cancel()
-        clientReconnectJob = null
-        clientReconnectAttempt = 0
+        // Only an explicit user stop clears the logical client connection
+        // intent. Transport timeouts and network failures never call this.
+        ClientSessionController.userDisconnect()
 
         setIsStreaming(false)
         val app = getApplication<Application>()
@@ -852,13 +759,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         (NetworkManager.discoveredDevices as MutableStateFlow).value = emptyMap()
     }
 
-    override fun onCleared() {
-        clientReconnectJob?.cancel()
-        super.onCleared()
-    }
-
-    private companion object {
-        val CLIENT_RECONNECT_DELAYS_MS = longArrayOf(1_000L, 2_000L, 3_000L, 5_000L, 10_000L)
-    }
 }
 
