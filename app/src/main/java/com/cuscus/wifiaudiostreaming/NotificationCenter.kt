@@ -182,6 +182,15 @@ object NotificationCenter {
             .addAction(stopAction(context))
             .build()
 
+    /** Lab-only foreground notification for the Shizuku shell audio bridge. */
+    fun shizukuBridgeNotification(context: Context, status: String): Notification =
+        baseBuilder(context, CHANNEL_SERVER, R.drawable.ic_notif_stream)
+            .setContentTitle("WFAS · Shizuku Audio Bridge")
+            .setContentText(status)
+            .setShortCriticalText(context.getString(R.string.notif_chip_live))
+            .addAction(stopAction(context))
+            .build()
+
     /**
      * Il client Snapcast ha la sua notifica, non quella del client WFAS.
      *
