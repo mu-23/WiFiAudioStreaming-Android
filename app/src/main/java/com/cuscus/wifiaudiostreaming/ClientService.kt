@@ -35,7 +35,7 @@ class ClientService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!NotificationCenter.canPost(this)) {
-            Toast.makeText(this, R.string.notification_permission_missing, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Notifications permission missing", Toast.LENGTH_SHORT).show()
             stopSelf()
             return START_NOT_STICKY
         }
