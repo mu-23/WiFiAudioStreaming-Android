@@ -793,4 +793,8 @@
     <string name="settings_item_open_shizuku_desc">Start or manage the Shizuku service used for direct system-audio capture.</string>
     <string name="shizuku_not_installed">Shizuku is not installed.</string>
 
+    <string name="shizuku_backend_limit_title">Current Shizuku lab scope</string>
+    <string name="shizuku_backend_limit_desc">Internal audio uses Shizuku by default. Unsupported combinations stop with a clear message and never fall back to screen sharing. WFAS unicast with security off is the currently integrated path.</string>
+    <string name="shizuku_mic_mix_setting_title">Microphone mixing not wired yet</string>
+
 </resources>
