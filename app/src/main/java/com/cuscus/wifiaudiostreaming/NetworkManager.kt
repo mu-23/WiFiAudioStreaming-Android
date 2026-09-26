@@ -2198,6 +2198,28 @@ object NetworkManager {
         streamingJob = scope.launch {
             var connectedSuccessfully = false
             var disconnectionSoundPlayed = false
+            val disconnectReason = java.util.concurrent.atomic.AtomicReference("LOCAL_OR_SERVICE_STOP")
+            val lastPingAt = java.util.concurrent.atomic.AtomicLong(0L)
+            val lastAudioAt = java.util.concurrent.atomic.AtomicLong(0L)
+
+            fun markDisconnect(reason: String, detail: String = "") {
+                disconnectReason.set(reason)
+                val now = System.currentTimeMillis()
+                val pingAt = lastPingAt.get()
+                val audioAt = lastAudioAt.get()
+                val pingAge = if (pingAt > 0L) now - pingAt else -1L
+                val audioAge = if (audioAt > 0L) now - audioAt else -1L
+                Log.w(
+                    TAG,
+                    "[CLIENT][DISCONNECT] reason=${reason} " +
+                            "mode=${if (serverInfo.isMulticast) "MULTICAST" else "UNICAST"} " +
+                            "peer=${serverInfo.ip}:${serverInfo.port} " +
+                            "pingAgeMs=${pingAge} audioAgeMs=${audioAge} " +
+                            "netRev=${networkRevision.value} metrics=${LinkMetrics.snapshot.value.format()}" +
+                            if (detail.isBlank()) "" else " detail=${detail}"
+                )
+            }
+
             try {
                 if (!serverInfo.isMulticast) {
                     var audioTrack: AudioTrack? = null
@@ -2409,7 +2431,9 @@ object NetworkManager {
                         if (connectionSoundEnabled) playConnectionSound(context)
                         connectedSuccessfully = true
 
-                        var lastPingReceived = System.currentTimeMillis()
+                        val connectedAt = System.currentTimeMillis()
+                        lastPingAt.set(connectedAt)
+                        lastAudioAt.set(connectedAt)
                         val pingTimeoutMs = 3000L
 
                         val MAGIC_0: Byte = 0x57
@@ -2425,7 +2449,9 @@ object NetworkManager {
                         val watchdogJob = launch {
                             while (isActive) {
                                 delay(1000)
-                                if (System.currentTimeMillis() - lastPingReceived > pingTimeoutMs) {
+                                val now = System.currentTimeMillis()
+                                if (now - lastPingAt.get() > pingTimeoutMs) {
+                                    markDisconnect("PING_TIMEOUT")
                                     if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
                                     streamingJob?.cancel()
                                     break
@@ -2447,6 +2473,7 @@ object NetworkManager {
                                 if (packetVersion != WFAS_PROTOCOL_VERSION) {
                                     signalProtocolMismatch(packetVersion, PeerRole.SENDER)
                                     connectionStatus.value = context.getString(R.string.status_protocol_incompatible)
+                                    markDisconnect("PROTOCOL_MISMATCH", "senderProtocol=${packetVersion} localProtocol=${WFAS_PROTOCOL_VERSION}")
                                     streamingJob?.cancel()
                                     return
                                 }
@@ -2607,12 +2634,14 @@ object NetworkManager {
                                     val pb = ByteArray(pk.remaining.toInt())
                                     pk.readFully(pb)
                                     if (pb.size >= 2 && pb[0] == MAGIC_0 && pb[1] == MAGIC_1) {
+                                        lastAudioAt.set(System.currentTimeMillis())
                                         audio.add(pb)
                                     } else {
                                         val ctrl = pb.toString(Charsets.UTF_8).trim()
                                         when (ctrl) {
-                                            "PING" -> lastPingReceived = System.currentTimeMillis()
+                                            "PING" -> lastPingAt.set(System.currentTimeMillis())
                                             "BYE" -> {
+                                                markDisconnect("SERVER_BYE")
                                                 if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
                                                 byeReceived = true
                                             }
@@ -2776,6 +2805,7 @@ object NetworkManager {
                                 val beaconExpected = mcDir != null || (mcKey.isNotEmpty() && !mcAnyRx)
                                 if (beaconExpected &&
                                     System.currentTimeMillis() - mcLastRxAt >= MULTICAST_SILENCE_TIMEOUT_MS) {
+                                    markDisconnect("MULTICAST_SILENCE_TIMEOUT", "lastRxAgeMs=${System.currentTimeMillis() - mcLastRxAt}")
                                     connectionStatus.value =
                                         context.getString(R.string.status_server_disconnected)
                                     if (disconnectionSoundEnabled) {
@@ -2862,6 +2892,7 @@ object NetworkManager {
                                     return
                                 }
                                 if (plen == 3 && String(src, 0, 3, Charsets.UTF_8) == "BYE") {
+                                    markDisconnect("SERVER_BYE_MULTICAST")
                                     connectionStatus.value =
                                         context.getString(R.string.status_server_disconnected)
                                     if (disconnectionSoundEnabled) { playDisconnectionSound(context); disconnectionSoundPlayed = true }
@@ -2874,6 +2905,7 @@ object NetworkManager {
                                 // something to play: the desktop and the C reference
                                 // (WFAS_PKT_OTHER) have always dropped it.
                                 if (plen < MC_HEADER_SIZE || src[0] != MC_MAGIC_0 || src[1] != MC_MAGIC_1) return
+                                lastAudioAt.set(System.currentTimeMillis())
                                 audioPackets.add(src.copyOf(plen))
                             }
 
@@ -2941,6 +2973,7 @@ object NetworkManager {
                                         if (packetVersion != WFAS_PROTOCOL_VERSION) {
                                             signalProtocolMismatch(packetVersion, PeerRole.SENDER)
                                             connectionStatus.value = context.getString(R.string.status_protocol_incompatible)
+                                            markDisconnect("PROTOCOL_MISMATCH", "senderProtocol=${packetVersion} localProtocol=${WFAS_PROTOCOL_VERSION}")
                                             mcAbort = true
                                             return
                                         }
@@ -3015,14 +3048,30 @@ object NetworkManager {
                     }
                 }
             } catch (e: BindException) {
+                markDisconnect("BIND_ERROR", e.message.orEmpty())
                 connectionStatus.value = context.getString(R.string.status_port_in_use)
             } catch (e: Exception) {
                 if (e is TimeoutCancellationException) {
+                    markDisconnect("CONNECTION_TIMEOUT", e.message.orEmpty())
                     connectionStatus.value = "Timeout connessione al server"
                 } else if (e !is CancellationException) {
+                    markDisconnect("CLIENT_EXCEPTION_${e::class.java.simpleName}", e.message.orEmpty())
                     connectionStatus.value = context.getString(R.string.status_client_error, e.message)
                 }
             } finally {
+                val finalNow = System.currentTimeMillis()
+                val finalPingAt = lastPingAt.get()
+                val finalAudioAt = lastAudioAt.get()
+                Log.i(
+                    TAG,
+                    "[CLIENT][SESSION-END] reason=${disconnectReason.get()} " +
+                            "mode=${if (serverInfo.isMulticast) "MULTICAST" else "UNICAST"} " +
+                            "peer=${serverInfo.ip}:${serverInfo.port} connected=${connectedSuccessfully} " +
+                            "pingAgeMs=${if (finalPingAt > 0L) finalNow - finalPingAt else -1L} " +
+                            "audioAgeMs=${if (finalAudioAt > 0L) finalNow - finalAudioAt else -1L} " +
+                            "status='${connectionStatus.value}' netRev=${networkRevision.value} " +
+                            "metrics=${LinkMetrics.snapshot.value.format()}"
+                )
                 micStreamingJob?.cancel()
                 micStreamingJob = null
                 isMicMuted.value = false
