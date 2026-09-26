@@ -77,7 +77,8 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
             int sampleRate,
             int channels,
             int packetBytes,
-            boolean keepPlayingOnDevice
+            boolean keepPlayingOnDevice,
+            boolean persistAfterClient
     ) {
         stopBridgeInternal();
 
@@ -135,7 +136,7 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         running.set(true);
         final int finalPacketBytes = safePacketBytes;
         bridgeThread = new Thread(
-                () -> runServer(port, sampleRate, channels, finalPacketBytes),
+                () -> runServer(port, sampleRate, channels, finalPacketBytes, persistAfterClient),
                 "wfas-shizuku-bridge"
         );
         bridgeThread.setDaemon(true);
@@ -145,7 +146,8 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 " mode=" + captureMode +
                 " port=" + port +
                 " " + sampleRate + "Hz/" + channels + "ch" +
-                " packet=" + finalPacketBytes + "B";
+                " packet=" + finalPacketBytes + "B" +
+                " persist=" + persistAfterClient;
         Log.i(TAG, status);
         return status;
     }
@@ -194,7 +196,13 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
         status = "idle";
     }
 
-    private void runServer(int port, int sampleRate, int channels, int packetBytes) {
+    private void runServer(
+            int port,
+            int sampleRate,
+            int channels,
+            int packetBytes,
+            boolean persistAfterClient
+    ) {
         DatagramSocket localSocket = null;
         try {
             localSocket = new DatagramSocket(null);
@@ -211,6 +219,11 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 if (client == null || !running.get()) break;
                 Log.i(TAG, "client connected " + client);
                 runSession(localSocket, client, sampleRate, channels, packetBytes);
+                if (running.get() && !persistAfterClient) {
+                    Log.i(TAG, "session ended; persistence disabled, stopping bridge");
+                    running.set(false);
+                    break;
+                }
                 if (running.get()) {
                     Log.i(TAG, "session ended; waiting for reconnect");
                 }
@@ -275,6 +288,8 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
     ) throws Exception {
         final int frameSize = channels * 2;
         final AtomicBoolean sessionAlive = new AtomicBoolean(true);
+        final AtomicBoolean pongCapable = new AtomicBoolean(false);
+        final AtomicLong lastClientActivityAt = new AtomicLong(System.currentTimeMillis());
         final AtomicReference<InetSocketAddress> client = new AtomicReference<>(initialClient);
         final InetAddress clientIp = initialClient.getAddress();
 
@@ -305,12 +320,18 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                             sendText(s, remote, "WFAS_INCOMPATIBLE;v=" + PROTOCOL_VERSION);
                         } else if (remote.getAddress().equals(clientIp)) {
                             client.set(remote);
+                            lastClientActivityAt.set(System.currentTimeMillis());
                             sendText(s, remote, "HELLO_ACK;v=" + PROTOCOL_VERSION);
                             Log.i(TAG, "client endpoint refreshed " + remote);
                         } else {
                             sendText(s, remote, "WFAS_BUSY");
                         }
+                    } else if ("PONG".equals(text) && remote.getAddress().equals(clientIp)) {
+                        client.set(remote);
+                        pongCapable.set(true);
+                        lastClientActivityAt.set(System.currentTimeMillis());
                     } else if ("CLIENT_BYE".equals(text) && remote.getAddress().equals(clientIp)) {
+                        lastClientActivityAt.set(System.currentTimeMillis());
                         sessionAlive.set(false);
                     }
                 } catch (Throwable t) {
@@ -326,6 +347,12 @@ public final class ShizukuAudioBridgeService extends IShizukuAudioBridge.Stub {
                 try {
                     Thread.sleep(1000);
                     sendText(s, client.get(), "PING");
+                    if (pongCapable.get() &&
+                            System.currentTimeMillis() - lastClientActivityAt.get() > 6_000L) {
+                        Log.w(TAG, "client heartbeat timed out; releasing session");
+                        sessionAlive.set(false);
+                        break;
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
