@@ -47,6 +47,7 @@ object ShellAudioBridgeMain {
     private const val MAGIC_0: Byte = 0x57
     private const val MAGIC_1: Byte = 0x46
     private const val HEADER_SIZE = 10
+    private const val SHELL_UID = 2000
 
     data class Config(
         val port: Int = DEFAULT_PORT,
@@ -62,7 +63,7 @@ object ShellAudioBridgeMain {
             "[WFAS-SHELL] starting uid=${Process.myUid()} port=${config.port} " +
                 "sr=${config.sampleRate} ch=${config.channels} packet=${config.packetBytes}"
         )
-        if (Process.myUid() != Process.SHELL_UID) {
+        if (Process.myUid() != SHELL_UID) {
             System.err.println(
                 "[WFAS-SHELL] WARNING: uid is not shell (2000). " +
                     "REMOTE_SUBMIX will normally be denied to a regular app UID."
