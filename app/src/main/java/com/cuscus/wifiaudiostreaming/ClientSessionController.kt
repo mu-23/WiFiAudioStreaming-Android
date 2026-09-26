@@ -131,7 +131,8 @@ object ClientSessionController {
      * Explicit UI/user stop. This is the operation that ends the logical
      * connection intent; transport timeouts do not call this.
      */
-    fun userDisconnect() {
+    fun userDisconnect(context: Context? = null) {
+        val clearContext = context?.applicationContext ?: appContext
         desiredConnected = false
         desiredTarget = null
         generation += 1
@@ -143,7 +144,7 @@ object ClientSessionController {
         statusJob = null
         restoreJob?.cancel()
         restoreJob = null
-        appContext?.let(::clearDesiredTarget)
+        clearContext?.let(::clearDesiredTarget)
         Log.i(TAG, "logical client session ended by explicit user stop")
     }
 
