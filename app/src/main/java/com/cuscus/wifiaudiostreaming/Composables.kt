@@ -786,6 +786,24 @@ fun SettingsScreenContent(
                                     description = stringResource(R.string.shizuku_backend_info_desc),
                                     icon = Icons.Outlined.Security
                                 )
+                                SettingsClickableItem(
+                                    title = stringResource(R.string.settings_item_open_shizuku_title),
+                                    description = stringResource(R.string.settings_item_open_shizuku_desc),
+                                    icon = Icons.Outlined.OpenInNew,
+                                    onClick = {
+                                        val launch = context.packageManager
+                                            .getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                                        if (launch != null) {
+                                            context.startActivity(launch)
+                                        } else {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.shizuku_not_installed),
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
