@@ -757,4 +757,8 @@
     <string name="settings_item_open_shizuku_desc">启动或管理用于直接抓取系统音频的 Shizuku 服务。</string>
     <string name="shizuku_not_installed">未安装 Shizuku。</string>
 
+    <string name="shizuku_backend_limit_title">当前 Shizuku 实验范围</string>
+    <string name="shizuku_backend_limit_desc">内部音频默认使用 Shizuku。不支持的组合会明确停止并提示，绝不会再自动回退到屏幕共享。目前已接通的是安全模式关闭时的 WFAS 单播。</string>
+    <string name="shizuku_mic_mix_setting_title">麦克风混音尚未接入</string>
+
 </resources>
