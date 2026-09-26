@@ -3,7 +3,7 @@ name: Build Chinese APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "zh-v1.2" ]
+    branches: [ "main" ]
     paths:
       - "app/src/main/**"
       - "app/build.gradle.kts"
