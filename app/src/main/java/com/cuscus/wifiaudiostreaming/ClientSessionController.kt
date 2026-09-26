@@ -166,6 +166,20 @@ object ClientSessionController {
                         return@disconnected
                     }
 
+                    if (!currentSettings.clientPersistentConnection) {
+                        desiredConnected = false
+                        desiredTarget = null
+                        generation += 1
+                        reconnectAttempt = 0
+                        reconnectJob?.cancel()
+                        reconnectJob = null
+                        statusJob?.cancel()
+                        statusJob = null
+                        context.stopService(Intent(context, ClientService::class.java))
+                        Log.i(TAG, "transport session ended; keep-connected preference is off")
+                        return@disconnected
+                    }
+
                     scheduleReconnect(context, serverInfo, token)
                 }
             )
