@@ -40,7 +40,7 @@ class ShizukuBridgeHostService : Service() {
             NotificationCenter.ID_SERVER,
             NotificationCenter.shizukuBridgeNotification(
                 this,
-                NetworkManager.connectionStatus.value.ifBlank { "Shizuku audio bridge active" }
+                NetworkManager.connectionStatus.value.ifBlank { getString(com.cuscus.wifiaudiostreaming.R.string.shizuku_bridge_active) }
             )
         )
 
@@ -54,7 +54,7 @@ class ShizukuBridgeHostService : Service() {
                         NotificationCenter.ID_SERVER,
                         NotificationCenter.shizukuBridgeNotification(
                             this@ShizukuBridgeHostService,
-                            status.ifBlank { "Shizuku audio bridge active" }
+                            status.ifBlank { getString(com.cuscus.wifiaudiostreaming.R.string.shizuku_bridge_active) }
                         )
                     )
                     delay(350)
