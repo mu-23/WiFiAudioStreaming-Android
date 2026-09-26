@@ -261,3 +261,19 @@ If AudioPolicy registration fails on a specific ROM, capture the exact
 This lab branch changes the application id and CI workflow. It does not publish
 to the production `zh-v1.2.1` release and must not be merged into `main`
 until the experiment is proven useful and the diff is reviewed.
+
+
+### 2026-09-26 Xiaomi/HyperOS compatibility and lab signing
+
+- Android 13+ Shizuku capture now builds AudioPolicy with a shell-identity Context
+  (`uid=2000`, package `com.android.shell`) to match scrcpy's privileged playback path.
+- Capture fallback order stays entirely inside the Shizuku backend:
+  broad AudioPolicy loopback -> scrcpy-compatible MEDIA-only AudioPolicy loopback ->
+  REMOTE_SUBMIX compatibility. It never falls back to MediaProjection.
+- The REMOTE_SUBMIX fallback may stop local playback on some ROMs; LOOP_BACK_RENDER
+  remains the preferred duplication path.
+- Lab CI now generates an explicit `.ci/lab-debug.keystore`, caches it under
+  `wfas-audio-bridge-lab-debug-keystore-v2`, and passes it to Gradle through
+  `WFAS_LAB_KEYSTORE`. After installing the first build signed by this key,
+  subsequent active-development builds can upgrade in place instead of requiring
+  uninstall/reinstall.
