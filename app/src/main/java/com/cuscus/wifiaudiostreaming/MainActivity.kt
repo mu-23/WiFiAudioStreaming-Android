@@ -492,6 +492,18 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
 
+            // If an older lab build left a MediaProjection session running,
+            // terminate only that capture session before starting Shizuku.
+            // ACTION_YIELD deliberately does not call NetworkManager.stopStreaming(),
+            // so it cannot tear down the new Shizuku server during the handoff.
+            runCatching {
+                startService(
+                    Intent(this, AudioCaptureService::class.java).apply {
+                        action = AudioCaptureService.ACTION_YIELD
+                    }
+                )
+            }
+
             ShizukuAudioBridgeManager.start(
                 this,
                 ShizukuAudioBridgeManager.Config(
