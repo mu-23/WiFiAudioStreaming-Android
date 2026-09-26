@@ -425,26 +425,45 @@ class MainActivity : ComponentActivity() {
     private fun requestServerStart(params: ResolvedServerParams) {
         pendingServerParams = params
 
-        // audio-bridge-lab: for the normal phone-to-phone internal-audio case,
-        // prefer Shizuku over MediaProjection. The privileged UserService runs
-        // as shell uid 2000, so no screen-capture authorization dialog is needed.
-        //
-        // Keep the first integration deliberately narrow: WFAS unicast, internal
-        // audio only. RTP/HTTP/DLNA/Snapcast/multicast and microphone still use
-        // the production MediaProjection/AudioCaptureService pipeline.
-        val shizukuBridgeShapeEligible =
-            params.streamInternal &&
-                !params.streamMic &&
-                !params.isMulticast &&
-                !params.rtpEnabled &&
-                !params.httpEnabled &&
-                !params.dlnaEnabled &&
-                !params.snapcastEnabled &&
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        /*
+         * audio-bridge-lab rule:
+         *
+         * INTERNAL AUDIO NEVER FALLS BACK TO MEDIAPROJECTION.
+         *
+         * The whole point of this branch is to prove App + Shizuku system-audio
+         * capture without the Android screen-share/capture session. If a
+         * Shizuku combination is not implemented yet, fail visibly instead of
+         * silently dropping into the production MediaProjection path.
+         */
+        if (params.streamInternal) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                pendingServerParams = null
+                viewModel.updateStatus("Shizuku audio bridge requires Android 11 or newer.")
+                Toast.makeText(
+                    this,
+                    "Shizuku audio bridge requires Android 11 or newer.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
 
-        if (shizukuBridgeShapeEligible) {
-            // The first Shizuku transport intentionally has no auth/crypto yet.
-            // Never advertise a secured sender while actually accepting plaintext.
+            val unsupportedProtocols =
+                params.isMulticast ||
+                    params.rtpEnabled ||
+                    params.httpEnabled ||
+                    params.dlnaEnabled ||
+                    params.snapcastEnabled
+
+            if (unsupportedProtocols) {
+                pendingServerParams = null
+                val detail =
+                    "Shizuku Lab currently supports internal audio over WFAS unicast only. " +
+                    "Disable multicast/RTP/HTTP/DLNA/Snapcast."
+                viewModel.updateStatus(detail)
+                Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
+                return
+            }
+
             val settings = viewModel.appSettings.value
             val securityOff =
                 settings != null &&
@@ -454,15 +473,25 @@ class MainActivity : ComponentActivity() {
 
             if (!securityOff) {
                 pendingServerParams = null
-                viewModel.updateStatus(
-                    "Shizuku lab bridge currently requires security mode OFF; auth/encryption is not wired yet."
-                )
+                val detail =
+                    "Shizuku Lab currently requires security mode OFF; auth/encryption is not wired yet."
+                viewModel.updateStatus(detail)
+                Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
                 return
             }
 
-            // Match scrcpy's proven playback-capture format for the first
-            // integrated build. Once runtime behavior is proven on real devices
-            // we can negotiate/offer other sample rates and channel layouts.
+            if (params.streamMic) {
+                // The current privileged bridge carries the system PCM stream
+                // only. Never use MediaProjection just because microphone was
+                // also selected; turn the unsupported source off explicitly.
+                viewModel.setStreamMic(false)
+                Toast.makeText(
+                    this,
+                    "Shizuku Lab 暂不支持麦克风混音，已仅发送内部音频。",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
             ShizukuAudioBridgeManager.start(
                 this,
                 ShizukuAudioBridgeManager.Config(
@@ -478,25 +507,23 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (params.streamInternal && !hasRecordAudioPermission()) {
-            onMicPermissionGranted = { requestServerStart(params) }
-            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-
-        if (!params.streamInternal && params.streamMic) {
+        // Microphone-only mode does not need MediaProjection.
+        if (params.streamMic) {
+            if (!hasRecordAudioPermission()) {
+                onMicPermissionGranted = { requestServerStart(params) }
+                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                return
+            }
             ScriptExecutor.startServerMicOnly(this, params)
             viewModel.setIsStreaming(true)
             pendingServerParams = null
             return
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val projectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
-        } else {
-            viewModel.updateStatus(getString(R.string.internal_audio_android_version_required))
-        }
+        pendingServerParams = null
+        val detail = "Select an audio source before starting the server."
+        viewModel.updateStatus(detail)
+        Toast.makeText(this, detail, Toast.LENGTH_LONG).show()
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
