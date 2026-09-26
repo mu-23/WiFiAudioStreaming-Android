@@ -114,6 +114,15 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
 
+        <activity
+            android:name=".VolumeControlActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.WiFiAudioStreaming.VolumeDialog" />
+
+
         <receiver
             android:name=".StreamingActionReceiver"
             android:exported="false">
