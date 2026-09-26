@@ -27,7 +27,7 @@ import rikka.shizuku.Shizuku
 object ShizukuAudioBridgeManager {
     private const val TAG = "WFAS_SHIZUKU_APP"
     private const val REQUEST_CODE_PERMISSION = 0x5746
-    private const val USER_SERVICE_VERSION = 2
+    private const val USER_SERVICE_VERSION = 3
     private const val RUNTIME_PREFS = "wfas_shizuku_runtime"
 
     data class Config(
@@ -226,13 +226,31 @@ object ShizukuAudioBridgeManager {
 
         runCatching {
             reattachingExisting = true
-            val version = Shizuku.peekUserService(userServiceArgs(app), serviceConnection)
-            if (version >= 0) {
-                bindingInProgress = true
-                Log.i(TAG, "reattaching to existing UserService version=$version")
-            } else {
-                reattachingExisting = false
-                pendingConfig?.takeIf { desiredRunning }?.let { begin(app, it) }
+            val args = userServiceArgs(app)
+            val version = Shizuku.peekUserService(args, serviceConnection)
+            when {
+                version == USER_SERVICE_VERSION -> {
+                    bindingInProgress = true
+                    Log.i(TAG, "reattaching to existing UserService version=$version")
+                }
+                version >= 0 -> {
+                    // Never reconnect to code from an older APK. Shizuku UserService
+                    // is a daemon and may survive an app update until it is explicitly
+                    // removed or a new UserService version is requested.
+                    reattachingExisting = false
+                    bindingInProgress = false
+                    Log.w(
+                        TAG,
+                        "stale UserService version=$version expected=$USER_SERVICE_VERSION; replacing it"
+                    )
+                    runCatching { Shizuku.unbindUserService(args, null, true) }
+                        .onFailure { Log.w(TAG, "could not remove stale UserService", it) }
+                    pendingConfig?.takeIf { desiredRunning }?.let { bindAndStart(app, it) }
+                }
+                else -> {
+                    reattachingExisting = false
+                    pendingConfig?.takeIf { desiredRunning }?.let { begin(app, it) }
+                }
             }
         }.onFailure {
             reattachingExisting = false
@@ -344,7 +362,9 @@ object ShizukuAudioBridgeManager {
         if (bindingInProgress) return
 
         _state.value = State.Binding
-        NetworkManager.connectionStatus.value = context.getString(R.string.shizuku_status_starting_bridge)
+        NetworkManager.connectionStatus.value =
+            context.getString(R.string.shizuku_status_starting_bridge) +
+                " · service v" + USER_SERVICE_VERSION
         bindingInProgress = true
         runCatching {
             Shizuku.bindUserService(userServiceArgs(context), serviceConnection)
