@@ -8,6 +8,7 @@ on:
       - "app/src/main/**"
       - "app/build.gradle.kts"
       - ".github/workflows/build-zh-apk.yml"
+      - ".github/BUILD_TRIGGER.txt"
 
 permissions:
   contents: write
