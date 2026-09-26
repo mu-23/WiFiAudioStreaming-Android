@@ -797,4 +797,16 @@
     <string name="shizuku_backend_limit_desc">Internal audio uses Shizuku by default. Unsupported combinations stop with a clear message and never fall back to screen sharing. WFAS unicast with security off is the currently integrated path.</string>
     <string name="shizuku_mic_mix_setting_title">Microphone mixing not wired yet</string>
 
+    <string name="update_dialog_available_title">Update available</string>
+    <string name="update_dialog_available_body">A newer version is ready to download.</string>
+    <string name="update_dialog_up_to_date_title">Up to date</string>
+    <string name="update_dialog_up_to_date_body">You are on the latest version (%1$s).</string>
+    <string name="update_dialog_failed_title">GitHub is not responding</string>
+    <string name="update_dialog_failed_body">Could not reach GitHub to check for updates. Please try again later.</string>
+    <string name="update_dialog_ahead_title">This build is newer than the latest release</string>
+    <string name="update_dialog_ahead_body">The installed build is ahead of the latest published release.</string>
+    <string name="update_dialog_github">Open GitHub releases</string>
+    <string name="update_dialog_later">Later</string>
+    <string name="update_dialog_close">Close</string>
+
 </resources>
